@@ -61,33 +61,25 @@ jobs:
           path: dist/*.whl
 
   build-wheels-linux-aarch64:
-    name: Build wheels (Linux, aarch64, Python ${{ matrix.python-version }})
+    name: Build wheels (Linux, aarch64)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: aarch64-unknown-linux-gnu
           manylinux: auto
-          args: --release --out dist
+          # Use full paths for manylinux container Python interpreters (same as x86_64)
+          args: --release --out dist -i /opt/python/cp310-cp310/bin/python -i /opt/python/cp311-cp311/bin/python -i /opt/python/cp312-cp312/bin/python -i /opt/python/cp313-cp313/bin/python
           sccache: "true"
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: dist-linux-aarch64-py${{ matrix.python-version }}
+          name: dist-linux-aarch64
           path: dist/*.whl
 
   build-wheels-macos:
