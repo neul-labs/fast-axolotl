@@ -72,8 +72,8 @@ jobs:
         with:
           target: aarch64-unknown-linux-gnu
           manylinux: auto
-          # Use full paths for manylinux container Python interpreters (same as x86_64)
-          args: --release --out dist -i /opt/python/cp310-cp310/bin/python -i /opt/python/cp311-cp311/bin/python -i /opt/python/cp312-cp312/bin/python -i /opt/python/cp313-cp313/bin/python
+          # For cross-compilation, use --find-interpreter since we can't execute aarch64 Python binaries on x86_64
+          args: --release --out dist --find-interpreter
           sccache: "true"
 
       - name: Upload wheels
