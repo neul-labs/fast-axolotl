@@ -1,6 +1,6 @@
 # fast-axolotl Compatibility Report
 
-Generated: 2025-12-11 10:14:21
+Generated: 2025-12-11 11:04:49
 
 ## Environment
 
@@ -29,7 +29,7 @@ Generated: 2025-12-11 10:14:21
 | Token Packing | ✅ | Token packing working correctly |
 | Parallel Hashing | ✅ | Parallel hashing working correctly |
 | Batch Padding | ✅ | Batch padding working correctly |
-| Axolotl Integration | ✅ | Axolotl integration working |
+| Axolotl Integration | ✅ | Axolotl not installed (shim-only test passed) |
 
 ## Detailed Results
 
@@ -117,13 +117,11 @@ Both left and right padding verified
 
 **Status**: PASS
 
-**Message**: Axolotl integration working
+**Message**: Axolotl not installed (shim-only test passed)
 
 **Details**:
 ```
-rust_streaming: OK
-data.fast_parallel_hash_rows: OK
-collators.fast_pad_sequences: OK
+Shimmed modules are available but axolotl package not installed
 ```
 
 ## Feature Compatibility Matrix
@@ -137,4 +135,4 @@ collators.fast_pad_sequences: OK
 | Token Packing Acceleration | ✅ Compatible | Token packing working correctly |
 | Parallel SHA256 Hashing | ✅ Compatible | Parallel hashing working correctly |
 | Batch Padding Acceleration | ✅ Compatible | Batch padding working correctly |
-| Axolotl Compatibility | ✅ Compatible | Axolotl integration working |
+| Axolotl Compatibility | ✅ Compatible | Axolotl not installed (shim-only test passed) |

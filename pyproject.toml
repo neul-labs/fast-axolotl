@@ -59,6 +59,9 @@ target-version = "py310"
 select = ["E", "F", "W", "C90", "B"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["C901"]  # Allow complex functions in scripts
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

@@ -6,29 +6,32 @@ import pytest
 def test_import():
     """Test that fast_axolotl can be imported."""
     import fast_axolotl
-    assert hasattr(fast_axolotl, '__version__')
-    assert hasattr(fast_axolotl, 'is_available')
-    assert hasattr(fast_axolotl, 'install')
-    assert hasattr(fast_axolotl, 'uninstall')
+
+    assert hasattr(fast_axolotl, "__version__")
+    assert hasattr(fast_axolotl, "is_available")
+    assert hasattr(fast_axolotl, "install")
+    assert hasattr(fast_axolotl, "uninstall")
 
 
 def test_version():
     """Test version string."""
     import fast_axolotl
+
     version = fast_axolotl.get_version()
-    assert '0.2.0' in version
+    assert "0.2.0" in version
 
 
 def test_is_available():
     """Test is_available function."""
     import fast_axolotl
+
     result = fast_axolotl.is_available()
     assert isinstance(result, bool)
 
 
 @pytest.mark.skipif(
     not pytest.importorskip("fast_axolotl").is_available(),
-    reason="Rust extension not available"
+    reason="Rust extension not available",
 )
 class TestRustExtension:
     """Tests that require the Rust extension."""
@@ -37,11 +40,13 @@ class TestRustExtension:
         """Test parameter validation in streaming reader."""
         from fast_axolotl import streaming_dataset_reader
 
-        with pytest.raises(Exception):
+        # Empty file_path should raise ValueError
+        with pytest.raises(ValueError):
             list(streaming_dataset_reader("", "parquet"))
 
-        with pytest.raises(Exception):
-            list(streaming_dataset_reader("/tmp/test.parquet", ""))
+        # Empty dataset_type is valid (auto-detect), but non-existent file raises RuntimeError
+        with pytest.raises(RuntimeError):
+            list(streaming_dataset_reader("/tmp/nonexistent.parquet", ""))
 
     def test_rust_streaming_dataset_init(self):
         """Test RustStreamingDataset initialization."""
@@ -51,7 +56,7 @@ class TestRustExtension:
         assert dataset.file_path == "/tmp/test.parquet"
         assert dataset.dataset_type == "parquet"
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             dataset_empty = RustStreamingDataset("", "parquet")
             list(dataset_empty)
 
@@ -60,9 +65,7 @@ class TestRustExtension:
         from fast_axolotl import create_rust_streaming_dataset
 
         dataset = create_rust_streaming_dataset(
-            "/tmp/test.parquet",
-            "parquet",
-            batch_size=100
+            "/tmp/test.parquet", "parquet", batch_size=100
         )
         assert dataset.file_path == "/tmp/test.parquet"
         assert dataset.dataset_type == "parquet"
@@ -71,7 +74,7 @@ class TestRustExtension:
 
 @pytest.mark.skipif(
     not pytest.importorskip("fast_axolotl").is_available(),
-    reason="Rust extension not available"
+    reason="Rust extension not available",
 )
 class TestTokenPacking:
     """Tests for token packing acceleration."""
@@ -82,17 +85,13 @@ class TestTokenPacking:
 
         sequences = [[1, 2, 3], [4, 5], [6, 7, 8, 9]]
         result = pack_sequences(
-            sequences,
-            max_length=10,
-            pad_token_id=0,
-            eos_token_id=2,
-            label_pad_id=-100
+            sequences, max_length=10, pad_token_id=0, eos_token_id=2, label_pad_id=-100
         )
 
-        assert 'input_ids' in result
-        assert 'labels' in result
-        assert 'attention_mask' in result
-        assert all(len(seq) == 10 for seq in result['input_ids'])
+        assert "input_ids" in result
+        assert "labels" in result
+        assert "attention_mask" in result
+        assert all(len(seq) == 10 for seq in result["input_ids"])
 
     def test_concatenate_and_pack(self):
         """Test concatenate_and_pack function."""
@@ -103,19 +102,21 @@ class TestTokenPacking:
         attention_masks = [[1, 1, 1], [1, 1, 1]]
 
         result = concatenate_and_pack(
-            input_ids, labels, attention_masks,
+            input_ids,
+            labels,
+            attention_masks,
             max_length=10,
             pad_token_id=0,
-            label_pad_id=-100
+            label_pad_id=-100,
         )
 
-        assert 'input_ids' in result
-        assert all(len(seq) == 10 for seq in result['input_ids'])
+        assert "input_ids" in result
+        assert all(len(seq) == 10 for seq in result["input_ids"])
 
 
 @pytest.mark.skipif(
     not pytest.importorskip("fast_axolotl").is_available(),
-    reason="Rust extension not available"
+    reason="Rust extension not available",
 )
 class TestParallelHashing:
     """Tests for parallel hashing acceleration."""
@@ -144,7 +145,7 @@ class TestParallelHashing:
 
     def test_deduplicate_with_existing(self):
         """Test deduplication with existing hashes."""
-        from fast_axolotl import parallel_hash_rows, deduplicate_indices
+        from fast_axolotl import deduplicate_indices
 
         # First batch
         rows1 = ["a", "b"]
@@ -160,7 +161,7 @@ class TestParallelHashing:
 
 @pytest.mark.skipif(
     not pytest.importorskip("fast_axolotl").is_available(),
-    reason="Rust extension not available"
+    reason="Rust extension not available",
 )
 class TestBatchPadding:
     """Tests for batch padding acceleration."""
@@ -228,21 +229,29 @@ class TestShim:
 
         if fast_axolotl.is_available():
             fast_axolotl.install()
-            assert 'axolotl.rust_ext.axolotl_ext' in sys.modules
-            assert 'axolotl.utils.data.rust_streaming' in sys.modules
-            assert 'axolotl.utils.data.rust_wrapper' in sys.modules
+            assert "axolotl.rust_ext.axolotl_ext" in sys.modules
+            assert "axolotl.utils.data.rust_streaming" in sys.modules
+            assert "axolotl.utils.data.rust_wrapper" in sys.modules
 
     def test_all_exports(self):
         """Test that all expected functions are exported."""
         import fast_axolotl
 
         expected = [
-            'is_available', 'get_version', 'install', 'uninstall',
-            'list_supported_formats', 'detect_format',
-            'streaming_dataset_reader', 'RustStreamingDataset',
-            'pack_sequences', 'concatenate_and_pack',
-            'parallel_hash_rows', 'deduplicate_indices',
-            'pad_sequences', 'create_padding_mask',
+            "is_available",
+            "get_version",
+            "install",
+            "uninstall",
+            "list_supported_formats",
+            "detect_format",
+            "streaming_dataset_reader",
+            "RustStreamingDataset",
+            "pack_sequences",
+            "concatenate_and_pack",
+            "parallel_hash_rows",
+            "deduplicate_indices",
+            "pad_sequences",
+            "create_padding_mask",
         ]
 
         for name in expected:
@@ -251,7 +260,7 @@ class TestShim:
 
 @pytest.mark.skipif(
     not pytest.importorskip("fast_axolotl").is_available(),
-    reason="Rust extension not available"
+    reason="Rust extension not available",
 )
 class TestFormatDetection:
     """Tests for format detection functionality."""

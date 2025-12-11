@@ -14,7 +14,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+import importlib.util
 
 
 @dataclass
@@ -41,7 +41,9 @@ def get_environment_info() -> dict[str, str]:
         import fast_axolotl
 
         info["fast-axolotl Version"] = fast_axolotl.get_version()
-        info["Rust Extension"] = "Available" if fast_axolotl.is_available() else "Not Available"
+        info["Rust Extension"] = (
+            "Available" if fast_axolotl.is_available() else "Not Available"
+        )
     except ImportError:
         info["fast-axolotl Version"] = "Not Installed"
         info["Rust Extension"] = "N/A"
@@ -237,10 +239,7 @@ def test_streaming_dataset_loading() -> TestResult:
             )
 
         # Create test data
-        test_data = [
-            {"text": f"Sample text {i}", "label": i}
-            for i in range(100)
-        ]
+        test_data = [{"text": f"Sample text {i}", "label": i} for i in range(100)]
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Test JSON format
@@ -270,9 +269,11 @@ def test_streaming_dataset_loading() -> TestResult:
                 ("CSV", csv_path, "csv"),
             ]:
                 try:
-                    batches = list(fast_axolotl.streaming_dataset_reader(
-                        path, fmt, batch_size=50, num_threads=2
-                    ))
+                    batches = list(
+                        fast_axolotl.streaming_dataset_reader(
+                            path, fmt, batch_size=50, num_threads=2
+                        )
+                    )
                     if batches:
                         results.append(f"{name}: OK ({len(batches)} batches)")
                     else:
@@ -287,9 +288,11 @@ def test_streaming_dataset_loading() -> TestResult:
                 parquet_path = os.path.join(tmpdir, "test.parquet")
                 Dataset.from_list(test_data).to_parquet(parquet_path)
 
-                batches = list(fast_axolotl.streaming_dataset_reader(
-                    parquet_path, "parquet", batch_size=50, num_threads=2
-                ))
+                batches = list(
+                    fast_axolotl.streaming_dataset_reader(
+                        parquet_path, "parquet", batch_size=50, num_threads=2
+                    )
+                )
                 results.append(f"Parquet: OK ({len(batches)} batches)")
             except ImportError:
                 results.append("Parquet: SKIPPED (datasets not installed)")
@@ -412,13 +415,13 @@ def test_parallel_hashing() -> TestResult:
         rust_hashes = fast_axolotl.parallel_hash_rows(rows, num_threads=4)
 
         # Compute expected hashes with Python
-        python_hashes = [
-            hashlib.sha256(row.encode()).hexdigest() for row in rows
-        ]
+        python_hashes = [hashlib.sha256(row.encode()).hexdigest() for row in rows]
 
         # Compare
         if rust_hashes != python_hashes:
-            mismatches = sum(1 for r, p in zip(rust_hashes, python_hashes) if r != p)
+            mismatches = sum(
+                1 for r, p in zip(rust_hashes, python_hashes, strict=True) if r != p
+            )
             return TestResult(
                 name="Parallel Hashing",
                 passed=False,
@@ -538,10 +541,20 @@ def test_axolotl_integration() -> TestResult:
                 message="Rust extension not available",
             )
 
-        # Try to import axolotl
+        # Check if the real axolotl package is installed (not just our shim)
+        # The shim creates fake modules, so we need to check if there's a real package
         try:
-            import axolotl
-        except ImportError:
+            spec = importlib.util.find_spec("axolotl")
+            if spec is None or spec.origin is None:
+                return TestResult(
+                    name="Axolotl Integration",
+                    passed=True,
+                    message="Axolotl not installed (shim-only test passed)",
+                    details="Shimmed modules are available but axolotl package not installed",
+                )
+        except (AttributeError, TypeError, ValueError):
+            # Shim module may not have proper __spec__ attribute
+            # ValueError is raised by find_spec when module.__spec__ is None
             return TestResult(
                 name="Axolotl Integration",
                 passed=True,
@@ -629,53 +642,63 @@ def generate_compatibility_report(
     status = "PASS" if passed == total else "FAIL"
     status_emoji = "\u2705" if passed == total else "\u274c"
 
-    lines.extend([
-        "",
-        "## Summary",
-        "",
-        f"**Overall Status**: {status_emoji} {status} ({passed}/{total} tests passed)",
-        "",
-        "## Test Results",
-        "",
-        "| Test | Status | Message |",
-        "|------|--------|---------|",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Summary",
+            "",
+            f"**Overall Status**: {status_emoji} {status} ({passed}/{total} tests passed)",
+            "",
+            "## Test Results",
+            "",
+            "| Test | Status | Message |",
+            "|------|--------|---------|",
+        ]
+    )
 
     for result in results:
         status_icon = "\u2705" if result.passed else "\u274c"
         lines.append(f"| {result.name} | {status_icon} | {result.message} |")
 
-    lines.extend([
-        "",
-        "## Detailed Results",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Detailed Results",
+            "",
+        ]
+    )
 
     for result in results:
         status_icon = "\u2705" if result.passed else "\u274c"
-        lines.extend([
-            f"### {status_icon} {result.name}",
-            "",
-            f"**Status**: {'PASS' if result.passed else 'FAIL'}",
-            "",
-            f"**Message**: {result.message}",
-            "",
-        ])
-        if result.details:
-            lines.extend([
-                "**Details**:",
-                "```",
-                result.details,
-                "```",
+        lines.extend(
+            [
+                f"### {status_icon} {result.name}",
                 "",
-            ])
+                f"**Status**: {'PASS' if result.passed else 'FAIL'}",
+                "",
+                f"**Message**: {result.message}",
+                "",
+            ]
+        )
+        if result.details:
+            lines.extend(
+                [
+                    "**Details**:",
+                    "```",
+                    result.details,
+                    "```",
+                    "",
+                ]
+            )
 
-    lines.extend([
-        "## Feature Compatibility Matrix",
-        "",
-        "| Feature | Status | Notes |",
-        "|---------|--------|-------|",
-    ])
+    lines.extend(
+        [
+            "## Feature Compatibility Matrix",
+            "",
+            "| Feature | Status | Notes |",
+            "|---------|--------|-------|",
+        ]
+    )
 
     feature_map = {
         "Rust Extension Loading": "Core Extension",

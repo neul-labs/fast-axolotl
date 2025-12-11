@@ -55,6 +55,7 @@ try:
         pad_sequences as _rust_pad_sequences,
         create_padding_mask as _rust_create_padding_mask,
     )
+
     RUST_AVAILABLE = True
 except ImportError as e:
     LOG.warning(f"Fast-axolotl Rust extension not available: {e}")
@@ -95,10 +96,25 @@ def list_supported_formats() -> List[str]:
     """
     if not RUST_AVAILABLE:
         return [
-            "parquet", "arrow", "feather", "csv", "json", "jsonl", "text",
-            "parquet.zst", "parquet.gz", "arrow.zst", "arrow.gz",
-            "json.zst", "json.gz", "jsonl.zst", "jsonl.gz",
-            "csv.zst", "csv.gz", "text.zst", "text.gz",
+            "parquet",
+            "arrow",
+            "feather",
+            "csv",
+            "json",
+            "jsonl",
+            "text",
+            "parquet.zst",
+            "parquet.gz",
+            "arrow.zst",
+            "arrow.gz",
+            "json.zst",
+            "json.gz",
+            "jsonl.zst",
+            "jsonl.gz",
+            "csv.zst",
+            "csv.gz",
+            "text.zst",
+            "text.gz",
             "hf_dataset",
         ]
     return _rust_list_supported_formats()
@@ -128,6 +144,7 @@ def detect_format(file_path: str) -> Tuple[str, Optional[str]]:
 # ACCELERATION #1: Token Packing
 # =============================================================================
 
+
 def pack_sequences(
     sequences: List[List[int]],
     max_length: int,
@@ -153,7 +170,9 @@ def pack_sequences(
     """
     if not RUST_AVAILABLE:
         raise ImportError("Rust extension is not available")
-    return _rust_pack_sequences(sequences, max_length, pad_token_id, eos_token_id, label_pad_id)
+    return _rust_pack_sequences(
+        sequences, max_length, pad_token_id, eos_token_id, label_pad_id
+    )
 
 
 def concatenate_and_pack(
@@ -191,6 +210,7 @@ def concatenate_and_pack(
 # =============================================================================
 # ACCELERATION #2: Parallel Hashing for Deduplication
 # =============================================================================
+
 
 def parallel_hash_rows(
     rows: List[str],
@@ -242,6 +262,7 @@ def deduplicate_indices(
 # ACCELERATION #3: Batch Padding
 # =============================================================================
 
+
 def pad_sequences(
     sequences: List[List[int]],
     target_length: Optional[int] = None,
@@ -267,7 +288,9 @@ def pad_sequences(
     """
     if not RUST_AVAILABLE:
         raise ImportError("Rust extension is not available")
-    return _rust_pad_sequences(sequences, target_length, pad_value, padding_side, pad_to_multiple_of)
+    return _rust_pad_sequences(
+        sequences, target_length, pad_value, padding_side, pad_to_multiple_of
+    )
 
 
 def create_padding_mask(
@@ -295,11 +318,9 @@ def create_padding_mask(
 # Streaming (Original)
 # =============================================================================
 
+
 def streaming_dataset_reader(
-    file_path: str,
-    dataset_type: str,
-    batch_size: int = 1000,
-    num_threads: int = 4
+    file_path: str, dataset_type: str, batch_size: int = 1000, num_threads: int = 4
 ) -> Iterator[Dict[str, Any]]:
     """
     Stream data from a dataset file using the Rust extension.
@@ -343,10 +364,7 @@ class RustStreamingDataset:
 
     def __iter__(self) -> Iterator[Dict[str, Any]]:
         yield from streaming_dataset_reader(
-            self.file_path,
-            self.dataset_type,
-            self.batch_size,
-            self.num_threads
+            self.file_path, self.dataset_type, self.batch_size, self.num_threads
         )
 
     def with_format(self, format: str):
@@ -372,18 +390,19 @@ def should_use_rust_streaming(
     cfg: Dict[str, Any],
 ) -> bool:
     """Determine if Rust streaming should be used for this dataset."""
-    if not RUST_AVAILABLE or not cfg.get('dataset_use_rust_streaming', False):
+    if not RUST_AVAILABLE or not cfg.get("dataset_use_rust_streaming", False):
         return False
-    if cfg.get('dataset_keep_in_memory', False):
+    if cfg.get("dataset_keep_in_memory", False):
         return False
     try:
         import os
+
         file_size = os.path.getsize(file_path)
         if file_size < 1024 * 1024 * 1024:
             return False
     except OSError:
         pass
-    if cfg.get('sequence_len', 0) < 10000:
+    if cfg.get("sequence_len", 0) < 10000:
         return False
     return True
 
@@ -391,6 +410,7 @@ def should_use_rust_streaming(
 # =============================================================================
 # Auto-Shimming
 # =============================================================================
+
 
 def install() -> bool:
     """
@@ -434,69 +454,69 @@ def _install_rust_ext_shim():
     """Install shim for axolotl.rust_ext module."""
     import types
 
-    if 'axolotl' not in sys.modules:
-        axolotl_mod = types.ModuleType('axolotl')
-        sys.modules['axolotl'] = axolotl_mod
+    if "axolotl" not in sys.modules:
+        axolotl_mod = types.ModuleType("axolotl")
+        sys.modules["axolotl"] = axolotl_mod
     else:
-        axolotl_mod = sys.modules['axolotl']
+        axolotl_mod = sys.modules["axolotl"]
 
-    if 'axolotl.rust_ext' not in sys.modules:
-        rust_ext_mod = types.ModuleType('axolotl.rust_ext')
-        sys.modules['axolotl.rust_ext'] = rust_ext_mod
+    if "axolotl.rust_ext" not in sys.modules:
+        rust_ext_mod = types.ModuleType("axolotl.rust_ext")
+        sys.modules["axolotl.rust_ext"] = rust_ext_mod
 
-    if 'axolotl.rust_ext.axolotl_ext' not in sys.modules:
-        axolotl_ext_mod = types.ModuleType('axolotl.rust_ext.axolotl_ext')
+    if "axolotl.rust_ext.axolotl_ext" not in sys.modules:
+        axolotl_ext_mod = types.ModuleType("axolotl.rust_ext.axolotl_ext")
         axolotl_ext_mod.streaming_dataset_reader = _rust_streaming_reader
-        sys.modules['axolotl.rust_ext.axolotl_ext'] = axolotl_ext_mod
+        sys.modules["axolotl.rust_ext.axolotl_ext"] = axolotl_ext_mod
 
 
 def _install_rust_streaming_shim():
     """Install shim for axolotl.utils.data.rust_streaming module."""
     import types
 
-    if 'axolotl.utils' not in sys.modules:
-        utils_mod = types.ModuleType('axolotl.utils')
-        sys.modules['axolotl.utils'] = utils_mod
+    if "axolotl.utils" not in sys.modules:
+        utils_mod = types.ModuleType("axolotl.utils")
+        sys.modules["axolotl.utils"] = utils_mod
 
-    if 'axolotl.utils.data' not in sys.modules:
-        data_mod = types.ModuleType('axolotl.utils.data')
-        sys.modules['axolotl.utils.data'] = data_mod
+    if "axolotl.utils.data" not in sys.modules:
+        data_mod = types.ModuleType("axolotl.utils.data")
+        sys.modules["axolotl.utils.data"] = data_mod
 
-    if 'axolotl.utils.data.rust_streaming' not in sys.modules:
-        rust_streaming_mod = types.ModuleType('axolotl.utils.data.rust_streaming')
+    if "axolotl.utils.data.rust_streaming" not in sys.modules:
+        rust_streaming_mod = types.ModuleType("axolotl.utils.data.rust_streaming")
         rust_streaming_mod.get_rust_extension_status = is_available
         rust_streaming_mod.streaming_dataset_reader = streaming_dataset_reader
         rust_streaming_mod.RUST_EXTENSION_AVAILABLE = RUST_AVAILABLE
-        sys.modules['axolotl.utils.data.rust_streaming'] = rust_streaming_mod
+        sys.modules["axolotl.utils.data.rust_streaming"] = rust_streaming_mod
 
 
 def _install_rust_wrapper_shim():
     """Install shim for axolotl.utils.data.rust_wrapper module."""
     import types
 
-    if 'axolotl.utils.data' not in sys.modules:
-        data_mod = types.ModuleType('axolotl.utils.data')
-        sys.modules['axolotl.utils.data'] = data_mod
+    if "axolotl.utils.data" not in sys.modules:
+        data_mod = types.ModuleType("axolotl.utils.data")
+        sys.modules["axolotl.utils.data"] = data_mod
 
-    if 'axolotl.utils.data.rust_wrapper' not in sys.modules:
-        rust_wrapper_mod = types.ModuleType('axolotl.utils.data.rust_wrapper')
+    if "axolotl.utils.data.rust_wrapper" not in sys.modules:
+        rust_wrapper_mod = types.ModuleType("axolotl.utils.data.rust_wrapper")
         rust_wrapper_mod.is_rust_streaming_available = is_available
         rust_wrapper_mod.load_dataset_with_rust_streaming = streaming_dataset_reader
         rust_wrapper_mod.RustStreamingDataset = RustStreamingDataset
         rust_wrapper_mod.create_rust_streaming_dataset = create_rust_streaming_dataset
         rust_wrapper_mod.should_use_rust_streaming = should_use_rust_streaming
-        sys.modules['axolotl.utils.data.rust_wrapper'] = rust_wrapper_mod
+        sys.modules["axolotl.utils.data.rust_wrapper"] = rust_wrapper_mod
 
 
 def _install_data_utils_shim():
     """Install acceleration for axolotl.utils.data.utils (parallel hashing)."""
     import types
 
-    if 'axolotl.utils.data' not in sys.modules:
-        data_mod = types.ModuleType('axolotl.utils.data')
-        sys.modules['axolotl.utils.data'] = data_mod
+    if "axolotl.utils.data" not in sys.modules:
+        data_mod = types.ModuleType("axolotl.utils.data")
+        sys.modules["axolotl.utils.data"] = data_mod
     else:
-        data_mod = sys.modules['axolotl.utils.data']
+        data_mod = sys.modules["axolotl.utils.data"]
 
     # Add fast deduplication functions to data module
     data_mod.fast_parallel_hash_rows = parallel_hash_rows
@@ -507,17 +527,17 @@ def _install_collators_shim():
     """Install acceleration for axolotl.utils.collators (batch padding)."""
     import types
 
-    if 'axolotl.utils' not in sys.modules:
-        utils_mod = types.ModuleType('axolotl.utils')
-        sys.modules['axolotl.utils'] = utils_mod
+    if "axolotl.utils" not in sys.modules:
+        utils_mod = types.ModuleType("axolotl.utils")
+        sys.modules["axolotl.utils"] = utils_mod
     else:
-        utils_mod = sys.modules['axolotl.utils']
+        utils_mod = sys.modules["axolotl.utils"]
 
-    if 'axolotl.utils.collators' not in sys.modules:
-        collators_mod = types.ModuleType('axolotl.utils.collators')
-        sys.modules['axolotl.utils.collators'] = collators_mod
+    if "axolotl.utils.collators" not in sys.modules:
+        collators_mod = types.ModuleType("axolotl.utils.collators")
+        sys.modules["axolotl.utils.collators"] = collators_mod
     else:
-        collators_mod = sys.modules['axolotl.utils.collators']
+        collators_mod = sys.modules["axolotl.utils.collators"]
 
     # Add fast padding functions
     collators_mod.fast_pad_sequences = pad_sequences
@@ -537,9 +557,9 @@ def uninstall() -> bool:
         return False
 
     modules_to_remove = [
-        'axolotl.rust_ext.axolotl_ext',
-        'axolotl.utils.data.rust_streaming',
-        'axolotl.utils.data.rust_wrapper',
+        "axolotl.rust_ext.axolotl_ext",
+        "axolotl.utils.data.rust_streaming",
+        "axolotl.utils.data.rust_wrapper",
     ]
 
     for mod_name in modules_to_remove:
@@ -562,25 +582,20 @@ __all__ = [
     "install",
     "uninstall",
     "RUST_AVAILABLE",
-
     # Format Detection
     "list_supported_formats",
     "detect_format",
-
     # Streaming
     "streaming_dataset_reader",
     "RustStreamingDataset",
     "create_rust_streaming_dataset",
     "should_use_rust_streaming",
-
     # Token Packing (Acceleration #1)
     "pack_sequences",
     "concatenate_and_pack",
-
     # Parallel Hashing (Acceleration #2)
     "parallel_hash_rows",
     "deduplicate_indices",
-
     # Batch Padding (Acceleration #3)
     "pad_sequences",
     "create_padding_mask",

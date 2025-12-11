@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 
 @dataclass
@@ -172,7 +172,9 @@ def python_pad_sequences(
         max_len = max(max_len, target_length)
 
     if pad_to_multiple_of is not None:
-        max_len = ((max_len + pad_to_multiple_of - 1) // pad_to_multiple_of) * pad_to_multiple_of
+        max_len = (
+            (max_len + pad_to_multiple_of - 1) // pad_to_multiple_of
+        ) * pad_to_multiple_of
 
     result = []
     for seq in sequences:
@@ -209,7 +211,10 @@ def benchmark_streaming_loading(
     # Create test data
     num_rows = 50000
     data = {
-        "text": [f"This is sample text number {i} with some content." for i in range(num_rows)],
+        "text": [
+            f"This is sample text number {i} with some content."
+            for i in range(num_rows)
+        ],
         "label": list(range(num_rows)),
     }
 
@@ -222,14 +227,17 @@ def benchmark_streaming_loading(
 
         # Benchmark Rust streaming
         def rust_load():
-            rows = list(fast_axolotl.streaming_dataset_reader(
-                parquet_path, "parquet", batch_size=1000, num_threads=4
-            ))
+            rows = list(
+                fast_axolotl.streaming_dataset_reader(
+                    parquet_path, "parquet", batch_size=1000, num_threads=4
+                )
+            )
             return rows
 
         # Benchmark HuggingFace datasets
         def hf_load():
             from datasets import load_dataset
+
             ds = load_dataset("parquet", data_files=parquet_path, split="train")
             # Force iteration
             for _ in ds:
@@ -272,7 +280,10 @@ def benchmark_token_packing(
 
     # Generate test sequences
     sequences = [
-        [random.randint(1, 30000) for _ in range(random.randint(10, avg_seq_length * 2))]
+        [
+            random.randint(1, 30000)
+            for _ in range(random.randint(10, avg_seq_length * 2))
+        ]
         for _ in range(num_sequences)
     ]
 
@@ -285,9 +296,7 @@ def benchmark_token_packing(
         )
 
     def python_pack():
-        return python_pack_sequences(
-            sequences, max_length, pad_token_id, eos_token_id
-        )
+        return python_pack_sequences(sequences, max_length, pad_token_id, eos_token_id)
 
     rust_time = timeit(rust_pack, iterations)
     python_time = timeit(python_pack, iterations)
@@ -411,13 +420,15 @@ def generate_benchmark_report(
     for key, value in system_info.items():
         lines.append(f"| {key} | {value} |")
 
-    lines.extend([
-        "",
-        "## Benchmark Results",
-        "",
-        "| Operation | Data Size | Rust (s) | Python (s) | Speedup |",
-        "|-----------|-----------|----------|------------|---------|",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Benchmark Results",
+            "",
+            "| Operation | Data Size | Rust (s) | Python (s) | Speedup |",
+            "|-----------|-----------|----------|------------|---------|",
+        ]
+    )
 
     for result in results:
         speedup_str = f"{result.speedup:.2f}x"
@@ -426,33 +437,39 @@ def generate_benchmark_report(
             f"{result.rust_time:.4f} | {result.python_time:.4f} | **{speedup_str}** |"
         )
 
-    lines.extend([
-        "",
-        "## Details",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Details",
+            "",
+        ]
+    )
 
     for result in results:
-        lines.extend([
-            f"### {result.name}",
-            "",
-            f"- **Data size**: {result.data_size}",
-            f"- **Iterations**: {result.iterations}",
-            f"- **Rust time**: {result.rust_time:.4f}s (avg)",
-            f"- **Python time**: {result.python_time:.4f}s (avg)",
-            f"- **Speedup**: {result.speedup:.2f}x faster",
-            "",
-        ])
+        lines.extend(
+            [
+                f"### {result.name}",
+                "",
+                f"- **Data size**: {result.data_size}",
+                f"- **Iterations**: {result.iterations}",
+                f"- **Rust time**: {result.rust_time:.4f}s (avg)",
+                f"- **Python time**: {result.python_time:.4f}s (avg)",
+                f"- **Speedup**: {result.speedup:.2f}x faster",
+                "",
+            ]
+        )
 
-    lines.extend([
-        "## Notes",
-        "",
-        "- All times are averages over multiple iterations",
-        "- Rust implementations use the fast-axolotl native extension",
-        "- Python baselines use standard library implementations",
-        "- Speedup = Python time / Rust time",
-        "",
-    ])
+    lines.extend(
+        [
+            "## Notes",
+            "",
+            "- All times are averages over multiple iterations",
+            "- Rust implementations use the fast-axolotl native extension",
+            "- Python baselines use standard library implementations",
+            "- Speedup = Python time / Rust time",
+            "",
+        ]
+    )
 
     with open(output_path, "w") as f:
         f.write("\n".join(lines))

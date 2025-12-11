@@ -7,10 +7,10 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::io::{Read, BufRead, BufReader};
 use std::fs::File;
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
+use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 /// Python module for fast-axolotl Rust extensions
@@ -48,16 +48,28 @@ fn get_version() -> &'static str {
 fn list_supported_formats() -> Vec<&'static str> {
     vec![
         // Base formats
-        "parquet", "arrow", "feather", "csv", "json", "jsonl", "text",
+        "parquet",
+        "arrow",
+        "feather",
+        "csv",
+        "json",
+        "jsonl",
+        "text",
         // Compressed formats
-        "parquet.zst", "parquet.gz",
-        "arrow.zst", "arrow.gz",
-        "json.zst", "json.gz",
-        "jsonl.zst", "jsonl.gz",
-        "csv.zst", "csv.gz",
-        "text.zst", "text.gz",
+        "parquet.zst",
+        "parquet.gz",
+        "arrow.zst",
+        "arrow.gz",
+        "json.zst",
+        "json.gz",
+        "jsonl.zst",
+        "jsonl.gz",
+        "csv.zst",
+        "csv.gz",
+        "text.zst",
+        "text.gz",
         // Directory formats
-        "hf_dataset",  // HuggingFace Arrow Dataset directory
+        "hf_dataset", // HuggingFace Arrow Dataset directory
     ]
 }
 
@@ -183,11 +195,15 @@ fn streaming_dataset_reader(
     num_threads: usize,
 ) -> PyResult<PyObject> {
     if file_path.is_empty() {
-        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("file_path cannot be empty"));
+        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            "file_path cannot be empty",
+        ));
     }
 
     if batch_size == 0 {
-        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("batch_size must be greater than 0"));
+        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            "batch_size must be greater than 0",
+        ));
     }
 
     // Auto-detect format if not specified or "auto"
@@ -213,12 +229,15 @@ fn streaming_dataset_reader(
     };
 
     let num_threads = if num_threads == 0 {
-        std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4)
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
     } else {
         num_threads
     };
 
-    let rt = Runtime::new().map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+    let rt = Runtime::new()
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
     let result = rt.block_on(async {
         read_dataset_streaming(file_path, base_format, compression, batch_size, num_threads).await
@@ -236,7 +255,9 @@ fn streaming_dataset_reader(
             }
             Ok(py_list.into())
         }
-        Err(e) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+        Err(e) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+            e.to_string(),
+        )),
     }
 }
 
@@ -249,13 +270,21 @@ async fn read_dataset_streaming(
 ) -> Result<Vec<HashMap<String, Vec<PyObject>>>, Box<dyn std::error::Error>> {
     match dataset_type {
         "parquet" => read_parquet_streaming(file_path, compression, batch_size, num_threads).await,
-        "arrow" | "ipc" => read_arrow_streaming(file_path, compression, batch_size, num_threads).await,
+        "arrow" | "ipc" => {
+            read_arrow_streaming(file_path, compression, batch_size, num_threads).await
+        }
         "feather" => read_feather_streaming(file_path, compression, batch_size, num_threads).await,
         "csv" | "tsv" => read_csv_streaming(file_path, compression, batch_size, num_threads).await,
         "json" => read_json_streaming(file_path, compression, batch_size, num_threads, false).await,
-        "jsonl" | "ndjson" | "text" => read_json_streaming(file_path, compression, batch_size, num_threads, true).await,
+        "jsonl" | "ndjson" | "text" => {
+            read_json_streaming(file_path, compression, batch_size, num_threads, true).await
+        }
         "hf_dataset" => read_hf_dataset_streaming(file_path, batch_size, num_threads).await,
-        _ => Err(format!("Unsupported dataset type: {}. Use list_supported_formats() to see available formats.", dataset_type).into()),
+        _ => Err(format!(
+            "Unsupported dataset type: {}. Use list_supported_formats() to see available formats.",
+            dataset_type
+        )
+        .into()),
     }
 }
 
@@ -327,9 +356,9 @@ async fn read_arrow_streaming(
 
         // Use Cursor for Arrow IPC which works with Read + Seek
         let cursor = std::io::Cursor::new(decompressed);
-        let mut arrow_reader = FileReader::try_new(cursor, None)?;
+        let arrow_reader = FileReader::try_new(cursor, None)?;
 
-        while let Some(record_batch) = arrow_reader.next() {
+        for record_batch in arrow_reader {
             let record_batch = record_batch?;
             let batch_data = record_batch_to_hashmap(&record_batch)?;
             batches.push(batch_data);
@@ -341,9 +370,9 @@ async fn read_arrow_streaming(
         }
     } else {
         let file = File::open(file_path)?;
-        let mut reader = FileReader::try_new(file, None)?;
+        let reader = FileReader::try_new(file, None)?;
 
-        while let Some(record_batch) = reader.next() {
+        for record_batch in reader {
             let record_batch = record_batch?;
             let batch_data = record_batch_to_hashmap(&record_batch)?;
             batches.push(batch_data);
@@ -407,13 +436,15 @@ async fn read_csv_streaming(
                         if field.is_empty() {
                             py.None()
                         } else if let Ok(int_val) = field.parse::<i64>() {
-                            int_val.to_object(py).into()
+                            int_val.to_object(py)
                         } else if let Ok(float_val) = field.parse::<f64>() {
-                            float_val.to_object(py).into()
-                        } else if field.eq_ignore_ascii_case("true") || field.eq_ignore_ascii_case("false") {
-                            field.parse::<bool>().unwrap_or(false).to_object(py).into()
+                            float_val.to_object(py)
+                        } else if field.eq_ignore_ascii_case("true")
+                            || field.eq_ignore_ascii_case("false")
+                        {
+                            field.parse::<bool>().unwrap_or(false).to_object(py)
                         } else {
-                            field.to_object(py).into()
+                            field.to_object(py)
                         }
                     });
                     column.push(py_object);
@@ -597,10 +628,12 @@ async fn read_hf_dataset_streaming(
         .filter_map(|e| e.ok())
         .filter(|e| {
             let path = e.path();
-            path.is_file() && (
-                path.extension().map_or(false, |ext| ext == "arrow") ||
-                path.to_string_lossy().contains("-of-")  // HF shard naming pattern
-            )
+            path.is_file()
+                && (
+                    path.extension().is_some_and(|ext| ext == "arrow")
+                        || path.to_string_lossy().contains("-of-")
+                    // HF shard naming pattern
+                )
         })
         .map(|e| e.path().to_path_buf())
         .collect();
@@ -616,9 +649,9 @@ async fn read_hf_dataset_streaming(
 
     for arrow_file in arrow_files {
         let file = File::open(&arrow_file)?;
-        let mut reader = FileReader::try_new(file, None)?;
+        let reader = FileReader::try_new(file, None)?;
 
-        while let Some(record_batch) = reader.next() {
+        for record_batch in reader {
             let record_batch = record_batch?;
             let batch_data = record_batch_to_hashmap(&record_batch)?;
             batches.push(batch_data);
@@ -642,7 +675,7 @@ async fn read_hf_dataset_streaming(
 // =============================================================================
 
 fn record_batch_to_hashmap(
-    record_batch: &arrow::array::RecordBatch
+    record_batch: &arrow::array::RecordBatch,
 ) -> Result<HashMap<String, Vec<PyObject>>, Box<dyn std::error::Error>> {
     let mut batch_data = HashMap::new();
 
@@ -656,46 +689,48 @@ fn record_batch_to_hashmap(
     Ok(batch_data)
 }
 
-fn json_value_to_py_object(value: serde_json::Value) -> Result<PyObject, Box<dyn std::error::Error>> {
-    Ok(Python::with_gil(|py| {
-        match value {
-            serde_json::Value::Null => py.None().into(),
-            serde_json::Value::Bool(b) => b.to_object(py).into(),
-            serde_json::Value::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    i.to_object(py).into()
-                } else if let Some(u) = n.as_u64() {
-                    u.to_object(py).into()
-                } else if let Some(f) = n.as_f64() {
-                    f.to_object(py).into()
-                } else {
-                    n.to_string().to_object(py).into()
-                }
-            },
-            serde_json::Value::String(s) => s.to_object(py).into(),
-            serde_json::Value::Array(arr) => {
-                let py_list = PyList::empty(py);
-                for item in arr {
-                    if let Ok(py_obj) = json_value_to_py_object(item) {
-                        py_list.append(py_obj).unwrap_or(());
-                    }
-                }
-                py_list.into()
-            },
-            serde_json::Value::Object(obj) => {
-                let py_dict = PyDict::new(py);
-                for (key, value) in obj {
-                    if let Ok(py_obj) = json_value_to_py_object(value) {
-                        py_dict.set_item(key, py_obj).unwrap_or(());
-                    }
-                }
-                py_dict.into()
+fn json_value_to_py_object(
+    value: serde_json::Value,
+) -> Result<PyObject, Box<dyn std::error::Error>> {
+    Ok(Python::with_gil(|py| match value {
+        serde_json::Value::Null => py.None(),
+        serde_json::Value::Bool(b) => b.to_object(py),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                i.to_object(py)
+            } else if let Some(u) = n.as_u64() {
+                u.to_object(py)
+            } else if let Some(f) = n.as_f64() {
+                f.to_object(py)
+            } else {
+                n.to_string().to_object(py)
             }
+        }
+        serde_json::Value::String(s) => s.to_object(py),
+        serde_json::Value::Array(arr) => {
+            let py_list = PyList::empty(py);
+            for item in arr {
+                if let Ok(py_obj) = json_value_to_py_object(item) {
+                    py_list.append(py_obj).unwrap_or(());
+                }
+            }
+            py_list.to_object(py)
+        }
+        serde_json::Value::Object(obj) => {
+            let py_dict = PyDict::new(py);
+            for (key, value) in obj {
+                if let Ok(py_obj) = json_value_to_py_object(value) {
+                    py_dict.set_item(key, py_obj).unwrap_or(());
+                }
+            }
+            py_dict.to_object(py)
         }
     }))
 }
 
-fn arrow_array_to_py_objects(array: &arrow::array::ArrayRef) -> Result<Vec<PyObject>, Box<dyn std::error::Error>> {
+fn arrow_array_to_py_objects(
+    array: &arrow::array::ArrayRef,
+) -> Result<Vec<PyObject>, Box<dyn std::error::Error>> {
     use arrow::array::*;
     use arrow::datatypes::*;
 
@@ -706,108 +741,108 @@ fn arrow_array_to_py_objects(array: &arrow::array::ArrayRef) -> Result<Vec<PyObj
                 let mut result = Vec::with_capacity(string_array.len());
                 for i in 0..string_array.len() {
                     if string_array.is_null(i) {
-                        result.push(py.None().into());
+                        result.push(py.None());
                     } else {
-                        result.push(string_array.value(i).to_object(py).into());
+                        result.push(string_array.value(i).to_object(py));
                     }
                 }
                 Ok(result)
-            },
+            }
             DataType::LargeUtf8 => {
                 let string_array = array.as_any().downcast_ref::<LargeStringArray>().unwrap();
                 let mut result = Vec::with_capacity(string_array.len());
                 for i in 0..string_array.len() {
                     if string_array.is_null(i) {
-                        result.push(py.None().into());
+                        result.push(py.None());
                     } else {
-                        result.push(string_array.value(i).to_object(py).into());
+                        result.push(string_array.value(i).to_object(py));
                     }
                 }
                 Ok(result)
-            },
+            }
             DataType::Int32 => {
                 let int_array = array.as_any().downcast_ref::<Int32Array>().unwrap();
                 let mut result = Vec::with_capacity(int_array.len());
                 for i in 0..int_array.len() {
                     if int_array.is_null(i) {
-                        result.push(py.None().into());
+                        result.push(py.None());
                     } else {
-                        result.push(int_array.value(i).to_object(py).into());
+                        result.push(int_array.value(i).to_object(py));
                     }
                 }
                 Ok(result)
-            },
+            }
             DataType::Int64 => {
                 let int_array = array.as_any().downcast_ref::<Int64Array>().unwrap();
                 let mut result = Vec::with_capacity(int_array.len());
                 for i in 0..int_array.len() {
                     if int_array.is_null(i) {
-                        result.push(py.None().into());
+                        result.push(py.None());
                     } else {
-                        result.push(int_array.value(i).to_object(py).into());
+                        result.push(int_array.value(i).to_object(py));
                     }
                 }
                 Ok(result)
-            },
+            }
             DataType::Float32 => {
                 let float_array = array.as_any().downcast_ref::<Float32Array>().unwrap();
                 let mut result = Vec::with_capacity(float_array.len());
                 for i in 0..float_array.len() {
                     if float_array.is_null(i) {
-                        result.push(py.None().into());
+                        result.push(py.None());
                     } else {
-                        result.push(float_array.value(i).to_object(py).into());
+                        result.push(float_array.value(i).to_object(py));
                     }
                 }
                 Ok(result)
-            },
+            }
             DataType::Float64 => {
                 let float_array = array.as_any().downcast_ref::<Float64Array>().unwrap();
                 let mut result = Vec::with_capacity(float_array.len());
                 for i in 0..float_array.len() {
                     if float_array.is_null(i) {
-                        result.push(py.None().into());
+                        result.push(py.None());
                     } else {
-                        result.push(float_array.value(i).to_object(py).into());
+                        result.push(float_array.value(i).to_object(py));
                     }
                 }
                 Ok(result)
-            },
+            }
             DataType::Boolean => {
                 let bool_array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
                 let mut result = Vec::with_capacity(bool_array.len());
                 for i in 0..bool_array.len() {
                     if bool_array.is_null(i) {
-                        result.push(py.None().into());
+                        result.push(py.None());
                     } else {
-                        result.push(bool_array.value(i).to_object(py).into());
+                        result.push(bool_array.value(i).to_object(py));
                     }
                 }
                 Ok(result)
-            },
+            }
             DataType::List(_) => {
                 let list_array = array.as_any().downcast_ref::<ListArray>().unwrap();
                 let mut result = Vec::with_capacity(list_array.len());
                 for i in 0..list_array.len() {
                     if list_array.is_null(i) {
-                        result.push(py.None().into());
+                        result.push(py.None());
                     } else {
                         let inner = list_array.value(i);
                         let inner_py = arrow_array_to_py_objects(&inner)?;
                         let py_list = PyList::new(py, inner_py);
-                        result.push(py_list.into());
+                        result.push(py_list.to_object(py));
                     }
                 }
                 Ok(result)
-            },
+            }
             _ => {
                 // Fallback for other types
                 let mut result = Vec::with_capacity(array.len());
                 for i in 0..array.len() {
                     if array.is_null(i) {
-                        result.push(py.None().into());
+                        result.push(py.None());
                     } else {
-                        result.push(format!("{:?}", array.slice(i, 1)).to_object(py).into());
+                        result.push(format!("{:?}", array.slice(i, 1)).to_object(py));
                     }
                 }
                 Ok(result)
@@ -983,24 +1018,23 @@ use std::sync::Mutex;
 use std::thread;
 
 #[pyfunction]
-fn parallel_hash_rows(
-    py: Python,
-    rows: Vec<String>,
-    num_threads: usize,
-) -> PyResult<Vec<String>> {
-    use sha2::{Sha256, Digest};
+fn parallel_hash_rows(py: Python, rows: Vec<String>, num_threads: usize) -> PyResult<Vec<String>> {
+    use sha2::{Digest, Sha256};
 
     let num_threads = if num_threads == 0 {
-        thread::available_parallelism().map(|n| n.get()).unwrap_or(4)
+        thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
     } else {
         num_threads
     };
 
     let rows = Arc::new(rows);
     let num_rows = rows.len();
-    let chunk_size = (num_rows + num_threads - 1) / num_threads;
+    let chunk_size = num_rows.div_ceil(num_threads);
 
-    let results: Arc<Mutex<Vec<(usize, String)>>> = Arc::new(Mutex::new(Vec::with_capacity(num_rows)));
+    let results: Arc<Mutex<Vec<(usize, String)>>> =
+        Arc::new(Mutex::new(Vec::with_capacity(num_rows)));
 
     py.allow_threads(|| {
         let mut handles = Vec::new();
@@ -1055,10 +1089,8 @@ fn deduplicate_indices(
 ) -> PyResult<(Vec<usize>, Vec<String>)> {
     let hashes = parallel_hash_rows(py, rows, num_threads)?;
 
-    let mut seen: std::collections::HashSet<String> = existing_hashes
-        .unwrap_or_default()
-        .into_iter()
-        .collect();
+    let mut seen: std::collections::HashSet<String> =
+        existing_hashes.unwrap_or_default().into_iter().collect();
 
     let mut unique_indices = Vec::new();
     let mut new_hashes = Vec::new();
@@ -1097,30 +1129,33 @@ fn pad_sequences(
 
     if let Some(multiple) = pad_to_multiple_of {
         if multiple > 0 {
-            target = ((target + multiple - 1) / multiple) * multiple;
+            target = target.div_ceil(multiple) * multiple;
         }
     }
 
     let result = py.allow_threads(|| {
-        sequences.into_iter().map(|seq| {
-            let seq_len = seq.len();
-            if seq_len >= target {
-                seq[..target].to_vec()
-            } else {
-                let padding_len = target - seq_len;
-                let padding = vec![pad_value; padding_len];
-
-                if padding_side == "right" {
-                    let mut result = seq;
-                    result.extend(padding);
-                    result
+        sequences
+            .into_iter()
+            .map(|seq| {
+                let seq_len = seq.len();
+                if seq_len >= target {
+                    seq[..target].to_vec()
                 } else {
-                    let mut result = padding;
-                    result.extend(seq);
-                    result
+                    let padding_len = target - seq_len;
+                    let padding = vec![pad_value; padding_len];
+
+                    if padding_side == "right" {
+                        let mut result = seq;
+                        result.extend(padding);
+                        result
+                    } else {
+                        let mut result = padding;
+                        result.extend(seq);
+                        result
+                    }
                 }
-            }
-        }).collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
     });
 
     Ok(result)
