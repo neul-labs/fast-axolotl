@@ -5,7 +5,7 @@
 // Directory formats: HuggingFace Arrow Dataset
 
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use pyo3::types::{PyDict, PyList, PyModule};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
@@ -15,7 +15,7 @@ use tokio::runtime::Runtime;
 
 /// Python module for fast-axolotl Rust extensions
 #[pymodule]
-fn _rust_ext(_py: Python, m: &PyModule) -> PyResult<()> {
+fn _rust_ext(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Streaming
     m.add_function(wrap_pyfunction!(streaming_dataset_reader, m)?)?;
     m.add_function(wrap_pyfunction!(get_version, m)?)?;
@@ -436,15 +436,16 @@ async fn read_csv_streaming(
                         if field.is_empty() {
                             py.None()
                         } else if let Ok(int_val) = field.parse::<i64>() {
-                            int_val.to_object(py)
+                            int_val.into_pyobject(py).unwrap().into_any().unbind()
                         } else if let Ok(float_val) = field.parse::<f64>() {
-                            float_val.to_object(py)
+                            float_val.into_pyobject(py).unwrap().into_any().unbind()
                         } else if field.eq_ignore_ascii_case("true")
                             || field.eq_ignore_ascii_case("false")
                         {
-                            field.parse::<bool>().unwrap_or(false).to_object(py)
+                            let b = field.parse::<bool>().unwrap_or(false);
+                            b.into_pyobject(py).unwrap().to_owned().into_any().unbind()
                         } else {
-                            field.to_object(py)
+                            field.into_pyobject(py).unwrap().into_any().unbind()
                         }
                     });
                     column.push(py_object);
@@ -694,19 +695,19 @@ fn json_value_to_py_object(
 ) -> Result<PyObject, Box<dyn std::error::Error>> {
     Ok(Python::with_gil(|py| match value {
         serde_json::Value::Null => py.None(),
-        serde_json::Value::Bool(b) => b.to_object(py),
+        serde_json::Value::Bool(b) => b.into_pyobject(py).unwrap().to_owned().into_any().unbind(),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                i.to_object(py)
+                i.into_pyobject(py).unwrap().into_any().unbind()
             } else if let Some(u) = n.as_u64() {
-                u.to_object(py)
+                u.into_pyobject(py).unwrap().into_any().unbind()
             } else if let Some(f) = n.as_f64() {
-                f.to_object(py)
+                f.into_pyobject(py).unwrap().into_any().unbind()
             } else {
-                n.to_string().to_object(py)
+                n.to_string().into_pyobject(py).unwrap().into_any().unbind()
             }
         }
-        serde_json::Value::String(s) => s.to_object(py),
+        serde_json::Value::String(s) => s.into_pyobject(py).unwrap().into_any().unbind(),
         serde_json::Value::Array(arr) => {
             let py_list = PyList::empty(py);
             for item in arr {
@@ -714,7 +715,7 @@ fn json_value_to_py_object(
                     py_list.append(py_obj).unwrap_or(());
                 }
             }
-            py_list.to_object(py)
+            py_list.unbind().into()
         }
         serde_json::Value::Object(obj) => {
             let py_dict = PyDict::new(py);
@@ -723,7 +724,7 @@ fn json_value_to_py_object(
                     py_dict.set_item(key, py_obj).unwrap_or(());
                 }
             }
-            py_dict.to_object(py)
+            py_dict.unbind().into()
         }
     }))
 }
@@ -743,7 +744,14 @@ fn arrow_array_to_py_objects(
                     if string_array.is_null(i) {
                         result.push(py.None());
                     } else {
-                        result.push(string_array.value(i).to_object(py));
+                        result.push(
+                            string_array
+                                .value(i)
+                                .into_pyobject(py)
+                                .unwrap()
+                                .into_any()
+                                .unbind(),
+                        );
                     }
                 }
                 Ok(result)
@@ -755,7 +763,14 @@ fn arrow_array_to_py_objects(
                     if string_array.is_null(i) {
                         result.push(py.None());
                     } else {
-                        result.push(string_array.value(i).to_object(py));
+                        result.push(
+                            string_array
+                                .value(i)
+                                .into_pyobject(py)
+                                .unwrap()
+                                .into_any()
+                                .unbind(),
+                        );
                     }
                 }
                 Ok(result)
@@ -767,7 +782,14 @@ fn arrow_array_to_py_objects(
                     if int_array.is_null(i) {
                         result.push(py.None());
                     } else {
-                        result.push(int_array.value(i).to_object(py));
+                        result.push(
+                            int_array
+                                .value(i)
+                                .into_pyobject(py)
+                                .unwrap()
+                                .into_any()
+                                .unbind(),
+                        );
                     }
                 }
                 Ok(result)
@@ -779,7 +801,14 @@ fn arrow_array_to_py_objects(
                     if int_array.is_null(i) {
                         result.push(py.None());
                     } else {
-                        result.push(int_array.value(i).to_object(py));
+                        result.push(
+                            int_array
+                                .value(i)
+                                .into_pyobject(py)
+                                .unwrap()
+                                .into_any()
+                                .unbind(),
+                        );
                     }
                 }
                 Ok(result)
@@ -791,7 +820,14 @@ fn arrow_array_to_py_objects(
                     if float_array.is_null(i) {
                         result.push(py.None());
                     } else {
-                        result.push(float_array.value(i).to_object(py));
+                        result.push(
+                            float_array
+                                .value(i)
+                                .into_pyobject(py)
+                                .unwrap()
+                                .into_any()
+                                .unbind(),
+                        );
                     }
                 }
                 Ok(result)
@@ -803,7 +839,14 @@ fn arrow_array_to_py_objects(
                     if float_array.is_null(i) {
                         result.push(py.None());
                     } else {
-                        result.push(float_array.value(i).to_object(py));
+                        result.push(
+                            float_array
+                                .value(i)
+                                .into_pyobject(py)
+                                .unwrap()
+                                .into_any()
+                                .unbind(),
+                        );
                     }
                 }
                 Ok(result)
@@ -815,7 +858,15 @@ fn arrow_array_to_py_objects(
                     if bool_array.is_null(i) {
                         result.push(py.None());
                     } else {
-                        result.push(bool_array.value(i).to_object(py));
+                        result.push(
+                            bool_array
+                                .value(i)
+                                .into_pyobject(py)
+                                .unwrap()
+                                .to_owned()
+                                .into_any()
+                                .unbind(),
+                        );
                     }
                 }
                 Ok(result)
@@ -829,8 +880,8 @@ fn arrow_array_to_py_objects(
                     } else {
                         let inner = list_array.value(i);
                         let inner_py = arrow_array_to_py_objects(&inner)?;
-                        let py_list = PyList::new(py, inner_py);
-                        result.push(py_list.to_object(py));
+                        let py_list = PyList::new(py, inner_py).unwrap();
+                        result.push(py_list.unbind().into());
                     }
                 }
                 Ok(result)
@@ -842,7 +893,13 @@ fn arrow_array_to_py_objects(
                     if array.is_null(i) {
                         result.push(py.None());
                     } else {
-                        result.push(format!("{:?}", array.slice(i, 1)).to_object(py));
+                        result.push(
+                            format!("{:?}", array.slice(i, 1))
+                                .into_pyobject(py)
+                                .unwrap()
+                                .into_any()
+                                .unbind(),
+                        );
                     }
                 }
                 Ok(result)
