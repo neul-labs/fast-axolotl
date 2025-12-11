@@ -95,7 +95,7 @@ jobs:
           if [ -d /io/dist ]; then
             chown -R --reference=/io/Cargo.toml /io/dist
           fi
-SCRIPT
+          SCRIPT
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
