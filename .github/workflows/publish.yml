@@ -67,13 +67,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: |
+            3.10
+            3.11
+            3.12
+            3.13
+
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: aarch64-unknown-linux-gnu
           manylinux: auto
-          # Explicitly specify Python versions to avoid Python 3.14 which PyO3 0.23.x doesn't support
-          args: --release --out dist -i /opt/python/cp310-cp310/bin/python -i /opt/python/cp311-cp311/bin/python -i /opt/python/cp312-cp312/bin/python -i /opt/python/cp313-cp313/bin/python
+          # For cross-compilation, use host Python interpreters (not container paths)
+          args: --release --out dist -i python3.10 -i python3.11 -i python3.12 -i python3.13
           sccache: "true"
 
       - name: Upload wheels
