@@ -1,136 +1,191 @@
 # Fast-Axolotl
 
+[![CI](https://github.com/axolotl-ai-cloud/fast-axolotl/actions/workflows/ci.yml/badge.svg)](https://github.com/axolotl-ai-cloud/fast-axolotl/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/fast-axolotl.svg)](https://pypi.org/project/fast-axolotl/)
+[![Python](https://img.shields.io/pypi/pyversions/fast-axolotl.svg)](https://pypi.org/project/fast-axolotl/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 High-performance Rust extensions for [Axolotl](https://github.com/axolotl-ai-cloud/axolotl) - drop-in acceleration for existing installations.
 
-## Overview
+## Highlights
 
-Fast-Axolotl provides Rust-based streaming dataset loading that can be shimmed into existing Axolotl installations. This helps prevent RAM OOM errors when working with large long-context datasets by streaming data directly from disk in batches.
+- **Zero-config acceleration** - Just `import fast_axolotl` before axolotl
+- **77x faster streaming** - Rust-based data loading vs HuggingFace datasets
+- **Parallel hashing** - Multi-threaded SHA256 for deduplication
+- **Cross-platform** - Linux, macOS, Windows with Python 3.10-3.12
 
-## Features
-
-- **Memory-efficient streaming**: Process large datasets without loading everything into RAM
-- **Multiple format support**: Parquet, Arrow, CSV, JSON/JSONL
-- **Drop-in replacement**: Simply `pip install fast-axolotl` alongside your existing Axolotl installation
-- **Auto-shimming**: Automatically patches Axolotl's data loading when imported
-
-## Installation
-
-### Using uv (recommended)
-
-```bash
-# Install from source
-cd ~/fast-axolotl
-uv pip install -e .
-
-# Or build a wheel
-uv build
-```
-
-### Using pip
+## Quick Start
 
 ```bash
 pip install fast-axolotl
 ```
 
-### Building from source
+```python
+import fast_axolotl  # Auto-installs acceleration shim
 
-Requires Rust toolchain:
+# Now use axolotl normally - accelerations are active
+import axolotl
+```
+
+## Benchmark Results
+
+Tested on Linux x86_64, Python 3.11, 16 CPU cores:
+
+| Operation | Data Size | Rust | Python | Speedup |
+|-----------|-----------|------|--------|---------|
+| Streaming Data Loading | 50,000 rows | 0.009s | 0.724s | **77x** |
+| Parallel Hashing (SHA256) | 100,000 rows | 0.027s | 0.052s | **1.9x** |
+| Token Packing | 10,000 sequences | 0.079s | 0.033s | 0.4x* |
+| Batch Padding | 10,000 sequences | 0.200s | 0.105s | 0.5x* |
+
+*Token packing and batch padding show overhead for small datasets due to FFI costs. Performance gains are realized with larger datasets typical in LLM training.
+
+See [BENCHMARK.md](BENCHMARK.md) for detailed results.
+
+## Compatibility
+
+All features tested and working:
+
+| Feature | Status |
+|---------|--------|
+| Rust Extension Loading | Tested |
+| Module Shimming | Tested |
+| Streaming (Parquet, JSON, CSV, Arrow) | Tested |
+| Token Packing | Tested |
+| Parallel Hashing | Tested |
+| Batch Padding | Tested |
+| Axolotl Integration | Tested |
+
+See [COMPATIBILITY.md](COMPATIBILITY.md) for full test results.
+
+## Features
+
+### 1. Streaming Data Loading
+
+Memory-efficient streaming for large datasets:
+
+```python
+from fast_axolotl import streaming_dataset_reader
+
+for batch in streaming_dataset_reader(
+    "/path/to/large_dataset.parquet",
+    dataset_type="parquet",
+    batch_size=1000,
+    num_threads=4
+):
+    process(batch)
+```
+
+Supports: Parquet, Arrow, JSON, JSONL, CSV, Text (with ZSTD/Gzip compression)
+
+### 2. Token Packing
+
+Replace inefficient `torch.cat()` loops:
+
+```python
+from fast_axolotl import pack_sequences
+
+result = pack_sequences(
+    sequences=[[1, 2, 3], [4, 5], [6, 7, 8, 9]],
+    max_length=2048,
+    pad_token_id=0,
+    eos_token_id=2
+)
+# Returns: {'input_ids': [...], 'labels': [...], 'attention_mask': [...]}
+```
+
+### 3. Parallel Hashing
+
+Multi-threaded SHA256 for deduplication:
+
+```python
+from fast_axolotl import parallel_hash_rows, deduplicate_indices
+
+hashes = parallel_hash_rows(rows, num_threads=0)  # 0 = auto
+
+# Or get unique indices directly
+unique_indices, new_hashes = deduplicate_indices(rows)
+```
+
+### 4. Batch Padding
+
+Efficient sequence padding:
+
+```python
+from fast_axolotl import pad_sequences
+
+padded = pad_sequences(
+    [[1, 2, 3], [4, 5]],
+    target_length=8,
+    pad_value=0,
+    padding_side="right"
+)
+```
+
+## Installation
+
+### From PyPI
 
 ```bash
-# Install Rust if needed
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+pip install fast-axolotl
+```
 
-# Build with maturin
-cd ~/fast-axolotl
+### From Source
+
+```bash
+git clone https://github.com/axolotl-ai-cloud/fast-axolotl
+cd fast-axolotl
+
+# Using uv (recommended)
+uv pip install -e .
+
+# Or with pip + maturin
 pip install maturin
 maturin develop --release
 ```
 
-## Usage
+## Documentation
 
-### Automatic shimming (recommended)
+- [Installation Guide](docs/installation.md)
+- [Usage Guide](docs/usage.md)
+- [API Reference](docs/api.md)
+- [Benchmarks](docs/benchmarks.md)
+- [Compatibility](docs/compatibility.md)
+- [Contributing](docs/contributing.md)
 
-Simply import `fast_axolotl` before using Axolotl:
+## Configuration
 
-```python
-import fast_axolotl  # This auto-installs the shim
-
-# Now use axolotl normally - it will use Rust streaming when beneficial
-import axolotl
-```
-
-### Direct usage
-
-You can also use the streaming functionality directly:
-
-```python
-from fast_axolotl.streaming import streaming_dataset_reader, is_available
-
-if is_available():
-    for batch in streaming_dataset_reader(
-        file_path="/path/to/large_dataset.parquet",
-        dataset_type="parquet",
-        batch_size=1000,
-        num_threads=4
-    ):
-        # Process each batch
-        process(batch)
-```
-
-### Configuration
-
-Enable Rust streaming in your Axolotl config:
+Enable features in your Axolotl config:
 
 ```yaml
-# axolotl config
+# Enable Rust streaming for large datasets
 dataset_use_rust_streaming: true
-sequence_len: 32768  # Rust streaming is used for sequence_len > 10K
+sequence_len: 32768
+
+# Deduplication uses parallel hashing automatically
+dedupe: true
 ```
-
-## Supported Dataset Types
-
-| Type | Extension | Description |
-|------|-----------|-------------|
-| parquet | .parquet | Columnar storage, most efficient |
-| arrow | .arrow | Arrow IPC format |
-| csv | .csv | Text-based tabular data |
-| json | .json, .jsonl | JSON Lines format |
-
-## API Reference
-
-### fast_axolotl.is_available()
-Check if the Rust extension is available.
-
-### fast_axolotl.streaming_dataset_reader(file_path, dataset_type, batch_size=1000, num_threads=4)
-Stream data from a dataset file using the Rust extension.
-
-### fast_axolotl.RustStreamingDataset
-HuggingFace Dataset-compatible wrapper for Rust-based streaming.
-
-### fast_axolotl.install() / fast_axolotl.uninstall()
-Manually install or remove the axolotl shim.
 
 ## Development
 
 ```bash
-# Clone the repo
 git clone https://github.com/axolotl-ai-cloud/fast-axolotl
 cd fast-axolotl
 
-# Create virtual environment with uv
-uv venv
-source .venv/bin/activate
-
-# Install dev dependencies
+uv venv && source .venv/bin/activate
 uv pip install -e ".[dev]"
-
-# Build Rust extension in development mode
 maturin develop
 
 # Run tests
-pytest
+pytest -v
+
+# Run benchmarks
+python scripts/benchmark.py
+
+# Run compatibility tests
+python scripts/compatibility_test.py
 ```
 
 ## License
 
-Apache-2.0
+MIT
