@@ -38,13 +38,9 @@ jobs:
           name: dist-sdist
           path: dist/*.tar.gz
 
-  build-wheels-linux:
-    name: Build wheels (Linux, ${{ matrix.target }})
+  build-wheels-linux-x86_64:
+    name: Build wheels (Linux, x86_64)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [x86_64, aarch64]
 
     steps:
       - uses: actions/checkout@v4
@@ -52,16 +48,46 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          target: ${{ matrix.target }}
+          target: x86_64
           manylinux: auto
-          # Use full paths for manylinux container Python interpreters (PyO3 0.22 supports up to 3.13)
+          # Use full paths for manylinux container Python interpreters
           args: --release --out dist -i /opt/python/cp310-cp310/bin/python -i /opt/python/cp311-cp311/bin/python -i /opt/python/cp312-cp312/bin/python -i /opt/python/cp313-cp313/bin/python
           sccache: "true"
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: dist-linux-${{ matrix.target }}
+          name: dist-linux-x86_64
+          path: dist/*.whl
+
+  build-wheels-linux-aarch64:
+    name: Build wheels (Linux, aarch64, Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: aarch64-unknown-linux-gnu
+          manylinux: auto
+          args: --release --out dist
+          sccache: "true"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux-aarch64-py${{ matrix.python-version }}
           path: dist/*.whl
 
   build-wheels-macos:
@@ -128,7 +154,7 @@ jobs:
 
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: [build-sdist, build-wheels-linux, build-wheels-macos, build-wheels-windows]
+    needs: [build-sdist, build-wheels-linux-x86_64, build-wheels-linux-aarch64, build-wheels-macos, build-wheels-windows]
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
     environment:
@@ -152,7 +178,7 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: [build-sdist, build-wheels-linux, build-wheels-macos, build-wheels-windows]
+    needs: [build-sdist, build-wheels-linux-x86_64, build-wheels-linux-aarch64, build-wheels-macos, build-wheels-windows]
     runs-on: ubuntu-latest
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
     environment:
