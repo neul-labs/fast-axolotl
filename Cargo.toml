@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # PyO3 for Python-Rust integration
-pyo3 = { version = "0.20.3", features = ["extension-module"] }
+pyo3 = { version = "0.23", features = ["extension-module"] }
 
 # Arrow ecosystem for efficient columnar data processing
 # Using version 51.0.0 for compatibility
