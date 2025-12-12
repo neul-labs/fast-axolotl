@@ -1,6 +1,6 @@
 # Fast-Axolotl
 
-[![CI](https://github.com/axolotl-ai-cloud/fast-axolotl/actions/workflows/ci.yml/badge.svg)](https://github.com/axolotl-ai-cloud/fast-axolotl/actions/workflows/ci.yml)
+[![CI](https://github.com/axolotl-ai-cloud/fast-axolotl/actions/workflows/ci.yml/badge.svg)](https://github.com/neul-labs/fast-axolotl/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/fast-axolotl.svg)](https://pypi.org/project/fast-axolotl/)
 [![Python](https://img.shields.io/pypi/pyversions/fast-axolotl.svg)](https://pypi.org/project/fast-axolotl/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
