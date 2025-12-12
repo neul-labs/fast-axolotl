@@ -35,8 +35,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/axolotl-ai-cloud/fast-axolotl"
-Repository = "https://github.com/axolotl-ai-cloud/fast-axolotl.git"
+Homepage = "https://github.com/neul-labs/fast-axolotl"
+Repository = "https://github.com/neul-labs/fast-axolotl.git"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
