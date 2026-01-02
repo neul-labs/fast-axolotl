@@ -1,0 +1,87 @@
+site_name: fast-axolotl
+site_description: High-performance Rust extensions for Axolotl - drop-in acceleration for LLM training
+site_url: https://github.com/dipankar/fast-axolotl
+repo_url: https://github.com/dipankar/fast-axolotl
+repo_name: fast-axolotl
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_root_heading: true
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quick-start.md
+  - User Guide:
+      - Streaming Data: user-guide/streaming.md
+      - Token Packing: user-guide/token-packing.md
+      - Parallel Hashing: user-guide/parallel-hashing.md
+      - Batch Padding: user-guide/batch-padding.md
+      - Auto-Shimming: user-guide/shimming.md
+  - API Reference:
+      - Core Functions: api-reference/core.md
+      - Streaming API: api-reference/streaming.md
+      - Data Processing: api-reference/data-processing.md
+  - Performance:
+      - Benchmarks: performance/benchmarks.md
+      - Best Practices: performance/best-practices.md
+  - Development:
+      - Contributing: development/contributing.md
+      - Architecture: development/architecture.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/dipankar/fast-axolotl
