@@ -85,3 +85,33 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --all-targets -- -D warnings
+
+  version-bump:
+    name: Check version bump and release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get current version from Cargo.toml
+        id: version
+        run: echo "version=$(grep -oP '^\s*version\s*=\s*"\K[^"]+' Cargo.toml)" >> $GITHUB_OUTPUT
+
+      - name: Get previous version from git
+        id: prev-version
+        run: |
+          git fetch origin main --depth=2
+          prev_version=$(git show HEAD:Cargo.toml | grep -oP '^\s*version\s*=\s*"\K[^"]+' || echo "")
+          echo "version=$prev_version" >> $GITHUB_OUTPUT
+
+      - name: Create release if version changed
+        if: steps.version.outputs.version != steps.prev-version.outputs.version
+        uses: ncipollo/release-action@v1
+        with:
+          tag: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body: "Version ${{ steps.version.outputs.version }} release"
+          draft: false
+          prerelease: false
+          artifacts: ""
+          token: ${{ secrets.GITHUB_TOKEN }}
