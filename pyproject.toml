@@ -4,7 +4,13 @@ build-backend = "maturin"
 
 [project]
 name = "fast-axolotl"
-version = "0.1.0"
+dynamic = ["version"]
+authors = [
+    { name = "Dipankar Sarkar", email = "me@dipankar.name" },
+]
+maintainers = [
+    { name = "Neul Labs" },
+]
 description = "High-performance Rust extensions for Axolotl - drop-in acceleration for existing installations"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -37,6 +43,8 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/neul-labs/fast-axolotl"
 Repository = "https://github.com/neul-labs/fast-axolotl.git"
+Documentation = "https://github.com/neul-labs/fast-axolotl#readme"
+Issues = "https://github.com/neul-labs/fast-axolotl/issues"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

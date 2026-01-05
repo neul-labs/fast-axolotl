@@ -192,6 +192,17 @@ python scripts/benchmark.py
 python scripts/compatibility_test.py
 ```
 
+## Support
+
+Questions or bugs? Reach out via:
+
+- GitHub Issues: https://github.com/neul-labs/fast-axolotl/issues
+- GitHub Discussions: https://github.com/neul-labs/fast-axolotl/discussions
+
+## Maintainers
+
+Fast-Axolotl is authored by Dipankar Sarkar (<me@dipankar.name>) and maintained by the team at Neul Labs.
+
 ## License
 
 MIT

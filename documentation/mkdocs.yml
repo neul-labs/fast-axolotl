@@ -1,7 +1,7 @@
 site_name: fast-axolotl
 site_description: High-performance Rust extensions for Axolotl - drop-in acceleration for LLM training
-site_url: https://github.com/dipankar/fast-axolotl
-repo_url: https://github.com/dipankar/fast-axolotl
+site_url: https://github.com/neul-labs/fast-axolotl
+repo_url: https://github.com/neul-labs/fast-axolotl
 repo_name: fast-axolotl
 
 theme:
@@ -84,4 +84,4 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/dipankar/fast-axolotl
+      link: https://github.com/neul-labs/fast-axolotl

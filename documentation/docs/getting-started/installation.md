@@ -37,7 +37,7 @@ If you need to build from source (e.g., for development or unsupported platforms
 
 ```bash
 # Clone the repository
-git clone https://github.com/dipankar/fast-axolotl.git
+git clone https://github.com/neul-labs/fast-axolotl.git
 cd fast-axolotl
 
 # Build and install in development mode

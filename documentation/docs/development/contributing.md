@@ -20,7 +20,7 @@ Thank you for your interest in contributing to fast-axolotl! This guide will hel
 
 ```bash
 # Clone the repository
-git clone https://github.com/dipankar/fast-axolotl.git
+git clone https://github.com/neul-labs/fast-axolotl.git
 cd fast-axolotl
 
 # Create virtual environment
@@ -309,7 +309,7 @@ def benchmark_my_function():
 
 Releases are automated via GitHub Actions:
 
-1. Update version in `pyproject.toml` and `Cargo.toml`
+1. Update version in `Cargo.toml` and `src/fast_axolotl/__init__.py`
 2. Update `CHANGELOG.md`
 3. Create a git tag: `git tag v0.x.x`
 4. Push tag: `git push origin v0.x.x`
@@ -320,8 +320,8 @@ CI will build wheels and publish to PyPI.
 
 ## Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/dipankar/fast-axolotl/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/dipankar/fast-axolotl/discussions)
+- **Issues**: [GitHub Issues](https://github.com/neul-labs/fast-axolotl/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/neul-labs/fast-axolotl/discussions)
 
 ---
 

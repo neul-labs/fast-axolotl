@@ -169,7 +169,7 @@ Run the benchmark script yourself:
 
 ```bash
 # Clone the repository
-git clone https://github.com/dipankar/fast-axolotl.git
+git clone https://github.com/neul-labs/fast-axolotl.git
 cd fast-axolotl
 
 # Install with dev dependencies

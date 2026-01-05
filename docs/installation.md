@@ -46,7 +46,7 @@ source ~/.cargo/env
 ### Clone and Build
 
 ```bash
-git clone https://github.com/axolotl-ai-cloud/fast-axolotl
+git clone https://github.com/neul-labs/fast-axolotl
 cd fast-axolotl
 ```
 

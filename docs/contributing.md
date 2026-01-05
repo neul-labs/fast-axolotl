@@ -20,7 +20,7 @@ source ~/.cargo/env
 ### Clone and Setup
 
 ```bash
-git clone https://github.com/axolotl-ai-cloud/fast-axolotl
+git clone https://github.com/neul-labs/fast-axolotl
 cd fast-axolotl
 
 # Create virtual environment
@@ -217,8 +217,8 @@ Releases are automated via GitHub Actions:
 
 ## Getting Help
 
-- **Issues**: https://github.com/axolotl-ai-cloud/fast-axolotl/issues
-- **Discussions**: https://github.com/axolotl-ai-cloud/fast-axolotl/discussions
+- **Issues**: https://github.com/neul-labs/fast-axolotl/issues
+- **Discussions**: https://github.com/neul-labs/fast-axolotl/discussions
 
 ## License
 

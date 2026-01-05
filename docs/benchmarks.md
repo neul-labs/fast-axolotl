@@ -172,4 +172,4 @@ Planned improvements:
 3. **GPU acceleration** for applicable operations
 4. **Async streaming** for network datasets
 
-See [GitHub Issues](https://github.com/axolotl-ai-cloud/fast-axolotl/issues) for progress.
+See [GitHub Issues](https://github.com/neul-labs/fast-axolotl/issues) for progress.

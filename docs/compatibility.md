@@ -193,7 +193,7 @@ If you encounter compatibility issues:
 
 1. Run the compatibility test: `python scripts/compatibility_test.py`
 2. Include the generated `COMPATIBILITY.md` in your issue
-3. Report at: https://github.com/axolotl-ai-cloud/fast-axolotl/issues
+3. Report at: https://github.com/neul-labs/fast-axolotl/issues
 
 Include:
 - Operating system and version

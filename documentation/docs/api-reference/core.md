@@ -10,7 +10,7 @@ The package version string.
 
 ```python
 import fast_axolotl
-print(fast_axolotl.__version__)  # e.g., "0.1.0"
+print(fast_axolotl.__version__)  # e.g., "0.1.12"
 ```
 
 ### `rust_available()`
