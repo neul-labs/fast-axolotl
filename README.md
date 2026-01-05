@@ -1,6 +1,6 @@
 # Fast-Axolotl
 
-[![CI](https://github.com/axolotl-ai-cloud/fast-axolotl/actions/workflows/ci.yml/badge.svg)](https://github.com/neul-labs/fast-axolotl/actions/workflows/ci.yml)
+[![CI](https://github.com/neul-labs/fast-axolotl/actions/workflows/ci.yml/badge.svg)](https://github.com/neul-labs/fast-axolotl/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/fast-axolotl.svg)](https://pypi.org/project/fast-axolotl/)
 [![Python](https://img.shields.io/pypi/pyversions/fast-axolotl.svg)](https://pypi.org/project/fast-axolotl/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -15,6 +15,12 @@ High-performance Rust extensions for [Axolotl](https://github.com/axolotl-ai-clo
 - **Cross-platform** - Linux, macOS, Windows with Python 3.10-3.12
 
 ## Quick Start
+
+```bash
+uv add fast-axolotl
+```
+
+or
 
 ```bash
 pip install fast-axolotl
@@ -127,13 +133,13 @@ padded = pad_sequences(
 ### From PyPI
 
 ```bash
-pip install fast-axolotl
+uv pip install fast-axolotl
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/axolotl-ai-cloud/fast-axolotl
+git clone https://github.com/neul-labs/fast-axolotl
 cd fast-axolotl
 
 # Using uv (recommended)
@@ -169,7 +175,7 @@ dedupe: true
 ## Development
 
 ```bash
-git clone https://github.com/axolotl-ai-cloud/fast-axolotl
+git clone https://github.com/neul-labs/fast-axolotl
 cd fast-axolotl
 
 uv venv && source .venv/bin/activate
