@@ -18,8 +18,36 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  validate-version:
+    name: Validate version matches release
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get Cargo.toml version
+        id: cargo-version
+        run: echo "version=$(grep -oP '^\s*version\s*=\s*"\K[^"]+' Cargo.toml)" >> $GITHUB_OUTPUT
+
+      - name: Get release tag version
+        id: release-version
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          echo "version=$tag" >> $GITHUB_OUTPUT
+
+      - name: Validate versions match
+        run: |
+          if [ "${{ steps.cargo-version.outputs.version }}" != "${{ steps.release-version.outputs.version }}" ]; then
+            echo "ERROR: Version mismatch!"
+            echo "Cargo.toml version: ${{ steps.cargo-version.outputs.version }}"
+            echo "Release tag version: ${{ steps.release-version.outputs.version }}"
+            exit 1
+          fi
+          echo "Version validated: ${{ steps.cargo-version.outputs.version }}"
+
   build-sdist:
     name: Build source distribution
+    needs: validate-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +68,7 @@ jobs:
 
   build-wheels-linux-x86_64:
     name: Build wheels (Linux, x86_64)
+    needs: validate-version
     runs-on: ubuntu-latest
 
     steps:
@@ -62,6 +91,7 @@ jobs:
 
   build-wheels-linux-aarch64:
     name: Build wheels (Linux, aarch64)
+    needs: validate-version
     runs-on: ubuntu-latest
 
     steps:
@@ -105,6 +135,7 @@ jobs:
 
   build-wheels-macos:
     name: Build wheels (macOS, ${{ matrix.target }})
+    needs: validate-version
     runs-on: macos-15
     strategy:
       fail-fast: false
@@ -138,6 +169,7 @@ jobs:
 
   build-wheels-windows:
     name: Build wheels (Windows, x86_64)
+    needs: validate-version
     runs-on: windows-latest
 
     steps:
@@ -167,7 +199,7 @@ jobs:
 
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: [build-sdist, build-wheels-linux-x86_64, build-wheels-linux-aarch64, build-wheels-macos, build-wheels-windows]
+    needs: [validate-version, build-sdist, build-wheels-linux-x86_64, build-wheels-linux-aarch64, build-wheels-macos, build-wheels-windows]
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
     environment:
@@ -191,7 +223,7 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: [build-sdist, build-wheels-linux-x86_64, build-wheels-linux-aarch64, build-wheels-macos, build-wheels-windows]
+    needs: [validate-version, build-sdist, build-wheels-linux-x86_64, build-wheels-linux-aarch64, build-wheels-macos, build-wheels-windows]
     runs-on: ubuntu-latest
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
     environment:

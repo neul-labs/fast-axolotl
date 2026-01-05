@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -88,8 +89,11 @@ jobs:
 
   version-bump:
     name: Check version bump and release
+    needs: [test, lint, rust-check]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && contains(github.event.head_commit.modified, 'Cargo.toml') || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -101,7 +105,7 @@ jobs:
         id: prev-version
         run: |
           git fetch origin main --depth=2
-          prev_version=$(git show HEAD:Cargo.toml | grep -oP '^\s*version\s*=\s*"\K[^"]+' || echo "")
+          prev_version=$(git show origin/main:Cargo.toml | grep -oP '^\s*version\s*=\s*"\K[^"]+' || echo "")
           echo "version=$prev_version" >> $GITHUB_OUTPUT
 
       - name: Create release if version changed
