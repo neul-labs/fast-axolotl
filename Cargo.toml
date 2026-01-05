@@ -9,7 +9,7 @@ documentation = "https://github.com/neul-labs/fast-axolotl#readme"
 readme = "README.md"
 repository = "https://github.com/neul-labs/fast-axolotl"
 description = "High-performance Rust extensions for Axolotl dataset streaming"
-keywords = ["axolotl", "streaming", "datasets", "rust", "pyo3"]
+keywords = ["axolotl", "streaming", "datasets", "rust", "pyo3", "data"]
 
 [lib]
 name = "_rust_ext"
