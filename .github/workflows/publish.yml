@@ -56,6 +56,15 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
+          enable-cache: true
+
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/
+          key: ${{ runner.os }}-sdist-rust-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-sdist-rust-
 
       - name: Build sdist
         run: uv run maturin sdist --out dist
@@ -73,6 +82,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/
+          key: ${{ runner.os }}-linux-x86_64-rust-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-linux-x86_64-rust-
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -97,35 +114,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/
+          key: ${{ runner.os }}-linux-aarch64-rust-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-linux-aarch64-rust-
+
       - name: Build wheels
-        env:
-          DOCKER_IMAGE: ghcr.io/rust-cross/manylinux2014-cross:aarch64
-        run: |
-          set -euxo pipefail
-          docker pull "${DOCKER_IMAGE}"
-          docker run --rm \
-            --workdir /io \
-            -e CARGO_TERM_COLOR \
-            -v "${{ github.workspace }}:/io" \
-            "${DOCKER_IMAGE}" \
-            bash <<'SCRIPT'
-          set -euxo pipefail
-          curl --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-          source "$HOME/.cargo/env"
-          rustup update --no-self-update stable
-          rustup target add aarch64-unknown-linux-gnu
-          export PATH="$PATH:/opt/python/cp310-cp310/bin:/opt/python/cp311-cp311/bin:/opt/python/cp312-cp312/bin:/opt/python/cp313-cp313/bin"
-          python3 -m ensurepip --upgrade
-          python3 -m pip install --no-cache-dir --upgrade pip
-          python3 -m pip install --no-cache-dir "maturin>=1.4,<2.0" patchelf
-          maturin build --release --target aarch64-unknown-linux-gnu --out /io/dist -i python3.10 -i python3.11 -i python3.12 -i python3.13
-          if [ -d /io/target ]; then
-            chown -R --reference=/io/Cargo.toml /io/target
-          fi
-          if [ -d /io/dist ]; then
-            chown -R --reference=/io/Cargo.toml /io/dist
-          fi
-          SCRIPT
+        uses: PyO3/maturin-action@v1
+        with:
+          target: aarch64
+          manylinux: manylinux2014
+          args: --release --out dist -i /opt/python/cp310-cp310/bin/python -i /opt/python/cp311-cp311/bin/python -i /opt/python/cp312-cp312/bin/python -i /opt/python/cp313-cp313/bin/python
+          sccache: "true"
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -144,6 +147,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/
+          key: ${{ runner.os }}-macos-${{ matrix.target }}-rust-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-macos-${{ matrix.target }}-rust-
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -174,6 +185,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/
+          key: ${{ runner.os }}-windows-rust-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-windows-rust-
 
       - name: Setup Python
         uses: actions/setup-python@v5

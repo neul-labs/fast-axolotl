@@ -1,15 +1,15 @@
 # fast-axolotl Compatibility Report
 
-Generated: 2025-12-11 13:37:52
+Generated: 2026-01-06 16:35:51
 
 ## Environment
 
 | Property | Value |
 |----------|-------|
-| Platform | Linux |
-| Platform Version | 6.17.7-x64v3-xanmod1 |
-| Architecture | x86_64 |
-| Python Version | 3.11.13 |
+| Platform | Darwin |
+| Platform Version | 25.1.0 |
+| Architecture | arm64 |
+| Python Version | 3.10.5 |
 | fast-axolotl Version | 0.2.0 (rust: 0.2.0) |
 | Rust Extension | Available |
 | axolotl Version | Unknown |

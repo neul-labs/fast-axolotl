@@ -25,7 +25,7 @@ import axolotl
 ```
 """
 
-__version__ = "0.1.12"
+__version__ = "0.2.0"
 
 import logging
 import sys
@@ -401,6 +401,7 @@ def should_use_rust_streaming(
         if file_size < 1024 * 1024 * 1024:
             return False
     except OSError:
+        # File doesn't exist or can't be accessed - fall back to conservative defaults
         pass
     if cfg.get("sequence_len", 0) < 10000:
         return False

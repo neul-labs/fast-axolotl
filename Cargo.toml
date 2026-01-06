@@ -1,6 +1,6 @@
 [package]
 name = "fast-axolotl"
-version = "0.1.13"
+version = "0.2.0"
 authors = ["Dipankar Sarkar <me@dipankar.name>", "Neul Labs"]
 edition = "2021"
 license = "MIT"
@@ -62,6 +62,9 @@ walkdir = "2.4"
 
 # Regex for pattern matching
 regex = "1.10"
+
+# Error handling with thiserror
+thiserror = "2"
 
 [profile.release]
 lto = true

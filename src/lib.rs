@@ -11,7 +11,153 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::runtime::Runtime;
+
+// =============================================================================
+// Error Types
+// =============================================================================
+
+/// Unified error type for fast-axolotl operations.
+///
+/// This enum provides structured error messages for all operations,
+/// making debugging easier and enabling better error handling in Python.
+#[derive(Error, Debug)]
+pub enum FastAxolotlError {
+    /// File not found or not accessible
+    #[error("File not found: {path}")]
+    FileNotFound { path: String },
+
+    /// Permission denied when accessing file
+    #[error("Permission denied: {path}")]
+    PermissionDenied { path: String },
+
+    /// I/O error during file operation
+    #[error("I/O error: {source}")]
+    Io {
+        #[from]
+        source: std::io::Error,
+    },
+
+    /// Invalid or unsupported file format
+    #[error("Invalid format: {message}")]
+    InvalidFormat { message: String },
+
+    /// Compression/decompression error
+    #[error("Compression error for '{file}': {source}")]
+    Compression {
+        file: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    /// JSON parsing error
+    #[error("JSON parse error: {source}")]
+    Json {
+        #[from]
+        source: serde_json::Error,
+    },
+
+    /// Arrow/Parquet error
+    #[error("Arrow/Parquet error: {source}")]
+    Arrow {
+        #[from]
+        source: arrow::error::ArrowError,
+    },
+
+    /// CSV parsing error
+    #[error("CSV error: {source}")]
+    Csv {
+        #[from]
+        source: csv::Error,
+    },
+
+    /// Invalid argument passed to function
+    #[error("Invalid argument: {message}")]
+    InvalidArgument { message: String },
+
+    /// Thread pool error (e.g., join failure)
+    #[error("Thread error: {message}")]
+    Thread { message: String },
+
+    /// General runtime error
+    #[error("Runtime error: {message}")]
+    Runtime { message: String },
+}
+
+/// Convert FastAxolotlError to Python exception
+impl From<FastAxolotlError> for PyErr {
+    fn from(e: FastAxolotlError) -> PyErr {
+        use pyo3::exceptions;
+        match e {
+            FastAxolotlError::FileNotFound { .. } => {
+                exceptions::PyFileNotFoundError::new_err(e.to_string())
+            }
+            FastAxolotlError::PermissionDenied { .. } => {
+                exceptions::PyPermissionError::new_err(e.to_string())
+            }
+            FastAxolotlError::InvalidArgument { .. } => {
+                exceptions::PyValueError::new_err(e.to_string())
+            }
+            FastAxolotlError::InvalidFormat { .. } => {
+                exceptions::PyValueError::new_err(e.to_string())
+            }
+            FastAxolotlError::Io { .. } => exceptions::PyIOError::new_err(e.to_string()),
+            FastAxolotlError::Compression { .. } => {
+                exceptions::PyRuntimeError::new_err(e.to_string())
+            }
+            FastAxolotlError::Arrow { .. } => exceptions::PyIOError::new_err(e.to_string()),
+            FastAxolotlError::Csv { .. } => exceptions::PyIOError::new_err(e.to_string()),
+            FastAxolotlError::Json { .. } => exceptions::PyValueError::new_err(e.to_string()),
+            FastAxolotlError::Thread { .. } => {
+                exceptions::PyRuntimeError::new_err(e.to_string())
+            }
+            FastAxolotlError::Runtime { .. } => {
+                exceptions::PyRuntimeError::new_err(e.to_string())
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Compression Error Conversions
+// =============================================================================
+
+impl FastAxolotlError {
+    /// Create a compression error with file context
+    pub fn compression_error(
+        file: &str,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        FastAxolotlError::Compression {
+            file: file.to_string(),
+            source: Box::new(source),
+        }
+    }
+}
+
+impl From<String> for FastAxolotlError {
+    fn from(e: String) -> Self {
+        FastAxolotlError::Runtime { message: e }
+    }
+}
+
+impl From<flate2::CompressError> for FastAxolotlError {
+    fn from(e: flate2::CompressError) -> Self {
+        FastAxolotlError::Compression {
+            file: "<gzip>".to_string(),
+            source: Box::new(e),
+        }
+    }
+}
+
+impl From<parquet::errors::ParquetError> for FastAxolotlError {
+    fn from(e: parquet::errors::ParquetError) -> Self {
+        FastAxolotlError::Arrow {
+            source: arrow::error::ArrowError::ExternalError(Box::new(e)),
+        }
+    }
+}
 
 /// Python module for fast-axolotl Rust extensions
 #[pymodule]
@@ -89,9 +235,11 @@ fn detect_format_and_compression(file_path: &str) -> (&'static str, Option<&'sta
 
     // Check for compression first
     let (base_path, compression) = if path.ends_with(".zst") || path.ends_with(".zstd") {
-        (&path[..path.rfind('.').unwrap()], Some("zstd"))
+        let idx = path.rfind('.').unwrap_or(path.len());
+        (&path[..idx], Some("zstd"))
     } else if path.ends_with(".gz") || path.ends_with(".gzip") {
-        (&path[..path.rfind('.').unwrap()], Some("gzip"))
+        let idx = path.rfind('.').unwrap_or(path.len());
+        (&path[..idx], Some("gzip"))
     } else {
         (path.as_str(), None)
     };
@@ -137,7 +285,7 @@ enum CompressedReader {
 }
 
 impl CompressedReader {
-    fn new(file_path: &str, compression: Option<&str>) -> Result<Self, Box<dyn std::error::Error>> {
+    fn new(file_path: &str, compression: Option<&str>) -> Result<Self, FastAxolotlError> {
         let file = File::open(file_path)?;
 
         match compression {
@@ -186,6 +334,38 @@ impl BufRead for CompressedReader {
 // Main Streaming Reader
 // =============================================================================
 
+/// Stream a dataset file in batches for memory-efficient processing.
+///
+/// This is the primary entry point for reading datasets with fast-axolotl.
+/// Supports Parquet, Arrow, CSV, JSON, JSONL, and text files, optionally compressed
+/// with ZSTD or gzip.
+///
+/// # Arguments
+///
+/// * `file_path` - Path to the dataset file or directory
+/// * `dataset_type` - Format type (e.g., "parquet", "jsonl", "csv.zst") or "auto" to detect
+/// * `batch_size` - Number of records per batch (must be > 0)
+/// * `num_threads` - Number of threads for parallel reading (0 = auto)
+///
+/// # Returns
+///
+/// An iterator yielding dictionaries with column names as keys and batched data as values.
+///
+/// # Errors
+///
+/// - `ValueError` if `file_path` is empty or `batch_size` is 0
+/// - `FileNotFoundError` if the file does not exist
+/// - `ValueError` if the format is unsupported
+/// - `RuntimeError` for compression, parquet, or arrow errors
+///
+/// # Example
+///
+/// ```python
+/// from fast_axolotl import streaming_dataset_reader
+///
+/// for batch in streaming_dataset_reader("data.parquet", "auto", 100, 0):
+///     print(batch.keys())  # Column names
+/// ```
 #[pyfunction]
 fn streaming_dataset_reader(
     py: Python,
@@ -267,7 +447,7 @@ async fn read_dataset_streaming(
     compression: Option<&str>,
     batch_size: usize,
     num_threads: usize,
-) -> Result<Vec<HashMap<String, Vec<PyObject>>>, Box<dyn std::error::Error>> {
+) -> Result<Vec<HashMap<String, Vec<PyObject>>>, FastAxolotlError> {
     match dataset_type {
         "parquet" => read_parquet_streaming(file_path, compression, batch_size, num_threads).await,
         "arrow" | "ipc" => {
@@ -292,12 +472,13 @@ async fn read_dataset_streaming(
 // Parquet Reader (with compression support)
 // =============================================================================
 
+#[allow(dead_code)]
 async fn read_parquet_streaming(
     file_path: &str,
     compression: Option<&str>,
     batch_size: usize,
     _num_threads: usize,
-) -> Result<Vec<HashMap<String, Vec<PyObject>>>, Box<dyn std::error::Error>> {
+) -> Result<Vec<HashMap<String, Vec<PyObject>>>, FastAxolotlError> {
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
     let mut batches = Vec::new();
@@ -339,12 +520,13 @@ async fn read_parquet_streaming(
 // Arrow IPC Reader (with compression support)
 // =============================================================================
 
+#[allow(dead_code)]
 async fn read_arrow_streaming(
     file_path: &str,
     compression: Option<&str>,
     batch_size: usize,
     _num_threads: usize,
-) -> Result<Vec<HashMap<String, Vec<PyObject>>>, Box<dyn std::error::Error>> {
+) -> Result<Vec<HashMap<String, Vec<PyObject>>>, FastAxolotlError> {
     use arrow::ipc::reader::FileReader;
 
     let mut batches = Vec::new();
@@ -396,7 +578,7 @@ async fn read_feather_streaming(
     compression: Option<&str>,
     batch_size: usize,
     num_threads: usize,
-) -> Result<Vec<HashMap<String, Vec<PyObject>>>, Box<dyn std::error::Error>> {
+) -> Result<Vec<HashMap<String, Vec<PyObject>>>, FastAxolotlError> {
     // Feather is essentially Arrow IPC format
     read_arrow_streaming(file_path, compression, batch_size, num_threads).await
 }
@@ -405,12 +587,13 @@ async fn read_feather_streaming(
 // CSV Reader (with compression support)
 // =============================================================================
 
+#[allow(dead_code)]
 async fn read_csv_streaming(
     file_path: &str,
     compression: Option<&str>,
     batch_size: usize,
     _num_threads: usize,
-) -> Result<Vec<HashMap<String, Vec<PyObject>>>, Box<dyn std::error::Error>> {
+) -> Result<Vec<HashMap<String, Vec<PyObject>>>, FastAxolotlError> {
     let reader = CompressedReader::new(file_path, compression)?;
     let mut csv_reader = csv::Reader::from_reader(reader);
 
@@ -434,18 +617,39 @@ async fn read_csv_streaming(
                 if let Some(column) = current_batch.get_mut(header) {
                     let py_object = Python::with_gil(|py| {
                         if field.is_empty() {
-                            py.None()
+                            py.None().into_any().into_pyobject(py).unwrap().unbind()
                         } else if let Ok(int_val) = field.parse::<i64>() {
-                            int_val.into_pyobject(py).unwrap().into_any().unbind()
+                            // into_pyobject should not fail for i64
+                            int_val.into_pyobject(py)
+                                .map(|o| o.into_any().unbind())
+                                .unwrap_or_else(|_| {
+                                    eprintln!("warning: Failed to convert int field '{}' to Python", field);
+                                    py.None().into_any().into_pyobject(py).unwrap().unbind()
+                                })
                         } else if let Ok(float_val) = field.parse::<f64>() {
-                            float_val.into_pyobject(py).unwrap().into_any().unbind()
+                            float_val.into_pyobject(py)
+                                .map(|o| o.into_any().unbind())
+                                .unwrap_or_else(|_| {
+                                    eprintln!("warning: Failed to convert float field '{}' to Python", field);
+                                    py.None().into_any().into_pyobject(py).unwrap().unbind()
+                                })
                         } else if field.eq_ignore_ascii_case("true")
                             || field.eq_ignore_ascii_case("false")
                         {
-                            let b = field.parse::<bool>().unwrap_or(false);
-                            b.into_pyobject(py).unwrap().to_owned().into_any().unbind()
+                            let b = field.eq_ignore_ascii_case("true");
+                            b.into_pyobject(py)
+                                .map(|o| o.to_owned().into_any().unbind())
+                                .unwrap_or_else(|_| {
+                                    eprintln!("warning: Failed to convert bool field '{}' to Python", field);
+                                    py.None().into_any().into_pyobject(py).unwrap().unbind()
+                                })
                         } else {
-                            field.into_pyobject(py).unwrap().into_any().unbind()
+                            field.into_pyobject(py)
+                                .map(|o| o.into_any().unbind())
+                                .unwrap_or_else(|_| {
+                                    eprintln!("warning: Failed to convert string field to Python");
+                                    py.None().into_any().into_pyobject(py).unwrap().unbind()
+                                })
                         }
                     });
                     column.push(py_object);
@@ -481,13 +685,14 @@ async fn read_csv_streaming(
 // JSON/JSONL Reader (with compression support)
 // =============================================================================
 
+#[allow(dead_code)]
 async fn read_json_streaming(
     file_path: &str,
     compression: Option<&str>,
     batch_size: usize,
     _num_threads: usize,
     is_jsonl: bool,
-) -> Result<Vec<HashMap<String, Vec<PyObject>>>, Box<dyn std::error::Error>> {
+) -> Result<Vec<HashMap<String, Vec<PyObject>>>, FastAxolotlError> {
     let reader = CompressedReader::new(file_path, compression)?;
 
     if is_jsonl {
@@ -502,10 +707,12 @@ async fn read_json_streaming(
 async fn read_jsonl_from_reader<R: BufRead>(
     reader: R,
     batch_size: usize,
-) -> Result<Vec<HashMap<String, Vec<PyObject>>>, Box<dyn std::error::Error>> {
+) -> Result<Vec<HashMap<String, Vec<PyObject>>>, FastAxolotlError> {
     let mut batches = Vec::new();
     let mut current_batch = HashMap::new();
     let mut record_count = 0;
+    let mut skipped_count = 0;
+    let mut first_error: Option<String> = None;
 
     for line in reader.lines() {
         let line = line?;
@@ -515,7 +722,13 @@ async fn read_jsonl_from_reader<R: BufRead>(
 
         let value: serde_json::Value = match serde_json::from_str(&line) {
             Ok(v) => v,
-            Err(_) => continue,
+            Err(e) => {
+                skipped_count += 1;
+                if first_error.is_none() && skipped_count <= 3 {
+                    first_error = Some(format!("Line {}: {}", line.len().min(100), e));
+                }
+                continue;
+            }
         };
         record_count += 1;
 
@@ -548,13 +761,22 @@ async fn read_jsonl_from_reader<R: BufRead>(
         batches.push(current_batch);
     }
 
+    if skipped_count > 0 {
+        eprintln!(
+            "warning: Skipped {} malformed JSON lines while reading JSONL. \
+             First error: {}",
+            skipped_count,
+            first_error.unwrap_or_else(|| "unknown".to_string())
+        );
+    }
+
     Ok(batches)
 }
 
 async fn read_json_from_reader<R: Read>(
     mut reader: R,
     batch_size: usize,
-) -> Result<Vec<HashMap<String, Vec<PyObject>>>, Box<dyn std::error::Error>> {
+) -> Result<Vec<HashMap<String, Vec<PyObject>>>, FastAxolotlError> {
     let mut content = String::new();
     reader.read_to_string(&mut content)?;
 
@@ -610,11 +832,12 @@ async fn read_json_from_reader<R: Read>(
 // HuggingFace Arrow Dataset Reader
 // =============================================================================
 
+#[allow(dead_code)]
 async fn read_hf_dataset_streaming(
     dir_path: &str,
     batch_size: usize,
     _num_threads: usize,
-) -> Result<Vec<HashMap<String, Vec<PyObject>>>, Box<dyn std::error::Error>> {
+) -> Result<Vec<HashMap<String, Vec<PyObject>>>, FastAxolotlError> {
     use arrow::ipc::reader::FileReader;
     use walkdir::WalkDir;
 
@@ -677,7 +900,7 @@ async fn read_hf_dataset_streaming(
 
 fn record_batch_to_hashmap(
     record_batch: &arrow::array::RecordBatch,
-) -> Result<HashMap<String, Vec<PyObject>>, Box<dyn std::error::Error>> {
+) -> Result<HashMap<String, Vec<PyObject>>, FastAxolotlError> {
     let mut batch_data = HashMap::new();
 
     for (i, column) in record_batch.columns().iter().enumerate() {
@@ -692,7 +915,7 @@ fn record_batch_to_hashmap(
 
 fn json_value_to_py_object(
     value: serde_json::Value,
-) -> Result<PyObject, Box<dyn std::error::Error>> {
+) -> Result<PyObject, FastAxolotlError> {
     Ok(Python::with_gil(|py| match value {
         serde_json::Value::Null => py.None(),
         serde_json::Value::Bool(b) => b.into_pyobject(py).unwrap().to_owned().into_any().unbind(),
@@ -712,7 +935,9 @@ fn json_value_to_py_object(
             let py_list = PyList::empty(py);
             for item in arr {
                 if let Ok(py_obj) = json_value_to_py_object(item) {
-                    py_list.append(py_obj).unwrap_or(());
+                    if let Err(e) = py_list.append(py_obj) {
+                        eprintln!("warning: Failed to append to PyList: {}", e);
+                    }
                 }
             }
             py_list.unbind().into()
@@ -721,7 +946,9 @@ fn json_value_to_py_object(
             let py_dict = PyDict::new(py);
             for (key, value) in obj {
                 if let Ok(py_obj) = json_value_to_py_object(value) {
-                    py_dict.set_item(key, py_obj).unwrap_or(());
+                    if let Err(e) = py_dict.set_item(&key, py_obj) {
+                        eprintln!("warning: Failed to set dict item '{}': {}", key, e);
+                    }
                 }
             }
             py_dict.unbind().into()
@@ -731,18 +958,21 @@ fn json_value_to_py_object(
 
 fn arrow_array_to_py_objects(
     array: &arrow::array::ArrayRef,
-) -> Result<Vec<PyObject>, Box<dyn std::error::Error>> {
+) -> Result<Vec<PyObject>, FastAxolotlError> {
     use arrow::array::*;
     use arrow::datatypes::*;
 
-    let py_objects = Python::with_gil(|py| -> Result<Vec<PyObject>, Box<dyn std::error::Error>> {
+    let py_objects = Python::with_gil(|py| -> Result<Vec<PyObject>, FastAxolotlError> {
         match array.data_type() {
             DataType::Utf8 => {
-                let string_array = array.as_any().downcast_ref::<StringArray>().unwrap();
+                let string_array = array.as_any().downcast_ref::<StringArray>()
+                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
+                        message: format!("Expected StringArray, got {:?}", array.data_type())
+                    })?;
                 let mut result = Vec::with_capacity(string_array.len());
                 for i in 0..string_array.len() {
                     if string_array.is_null(i) {
-                        result.push(py.None());
+                        result.push(py.None().into_any().into_pyobject(py).unwrap().unbind());
                     } else {
                         result.push(
                             string_array
@@ -757,11 +987,14 @@ fn arrow_array_to_py_objects(
                 Ok(result)
             }
             DataType::LargeUtf8 => {
-                let string_array = array.as_any().downcast_ref::<LargeStringArray>().unwrap();
+                let string_array = array.as_any().downcast_ref::<LargeStringArray>()
+                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
+                        message: format!("Expected LargeStringArray, got {:?}", array.data_type())
+                    })?;
                 let mut result = Vec::with_capacity(string_array.len());
                 for i in 0..string_array.len() {
                     if string_array.is_null(i) {
-                        result.push(py.None());
+                        result.push(py.None().into_any().into_pyobject(py).unwrap().unbind());
                     } else {
                         result.push(
                             string_array
@@ -776,11 +1009,14 @@ fn arrow_array_to_py_objects(
                 Ok(result)
             }
             DataType::Int32 => {
-                let int_array = array.as_any().downcast_ref::<Int32Array>().unwrap();
+                let int_array = array.as_any().downcast_ref::<Int32Array>()
+                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
+                        message: format!("Expected Int32Array, got {:?}", array.data_type())
+                    })?;
                 let mut result = Vec::with_capacity(int_array.len());
                 for i in 0..int_array.len() {
                     if int_array.is_null(i) {
-                        result.push(py.None());
+                        result.push(py.None().into_any().into_pyobject(py).unwrap().unbind());
                     } else {
                         result.push(
                             int_array
@@ -795,11 +1031,14 @@ fn arrow_array_to_py_objects(
                 Ok(result)
             }
             DataType::Int64 => {
-                let int_array = array.as_any().downcast_ref::<Int64Array>().unwrap();
+                let int_array = array.as_any().downcast_ref::<Int64Array>()
+                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
+                        message: format!("Expected Int64Array, got {:?}", array.data_type())
+                    })?;
                 let mut result = Vec::with_capacity(int_array.len());
                 for i in 0..int_array.len() {
                     if int_array.is_null(i) {
-                        result.push(py.None());
+                        result.push(py.None().into_any().into_pyobject(py).unwrap().unbind());
                     } else {
                         result.push(
                             int_array
@@ -814,11 +1053,14 @@ fn arrow_array_to_py_objects(
                 Ok(result)
             }
             DataType::Float32 => {
-                let float_array = array.as_any().downcast_ref::<Float32Array>().unwrap();
+                let float_array = array.as_any().downcast_ref::<Float32Array>()
+                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
+                        message: format!("Expected Float32Array, got {:?}", array.data_type())
+                    })?;
                 let mut result = Vec::with_capacity(float_array.len());
                 for i in 0..float_array.len() {
                     if float_array.is_null(i) {
-                        result.push(py.None());
+                        result.push(py.None().into_any().into_pyobject(py).unwrap().unbind());
                     } else {
                         result.push(
                             float_array
@@ -833,11 +1075,14 @@ fn arrow_array_to_py_objects(
                 Ok(result)
             }
             DataType::Float64 => {
-                let float_array = array.as_any().downcast_ref::<Float64Array>().unwrap();
+                let float_array = array.as_any().downcast_ref::<Float64Array>()
+                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
+                        message: format!("Expected Float64Array, got {:?}", array.data_type())
+                    })?;
                 let mut result = Vec::with_capacity(float_array.len());
                 for i in 0..float_array.len() {
                     if float_array.is_null(i) {
-                        result.push(py.None());
+                        result.push(py.None().into_any().into_pyobject(py).unwrap().unbind());
                     } else {
                         result.push(
                             float_array
@@ -852,11 +1097,14 @@ fn arrow_array_to_py_objects(
                 Ok(result)
             }
             DataType::Boolean => {
-                let bool_array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
+                let bool_array = array.as_any().downcast_ref::<BooleanArray>()
+                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
+                        message: format!("Expected BooleanArray, got {:?}", array.data_type())
+                    })?;
                 let mut result = Vec::with_capacity(bool_array.len());
                 for i in 0..bool_array.len() {
                     if bool_array.is_null(i) {
-                        result.push(py.None());
+                        result.push(py.None().into_any().into_pyobject(py).unwrap().unbind());
                     } else {
                         result.push(
                             bool_array
@@ -872,26 +1120,32 @@ fn arrow_array_to_py_objects(
                 Ok(result)
             }
             DataType::List(_) => {
-                let list_array = array.as_any().downcast_ref::<ListArray>().unwrap();
+                let list_array = array.as_any().downcast_ref::<ListArray>()
+                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
+                        message: format!("Expected ListArray, got {:?}", array.data_type())
+                    })?;
                 let mut result = Vec::with_capacity(list_array.len());
                 for i in 0..list_array.len() {
                     if list_array.is_null(i) {
-                        result.push(py.None());
+                        result.push(py.None().into_any().into_pyobject(py).unwrap().unbind());
                     } else {
                         let inner = list_array.value(i);
                         let inner_py = arrow_array_to_py_objects(&inner)?;
-                        let py_list = PyList::new(py, inner_py).unwrap();
+                        let py_list = PyList::new(py, inner_py)
+                            .map_err(|e| FastAxolotlError::Runtime {
+                                message: format!("Failed to create PyList: {}", e)
+                            })?;
                         result.push(py_list.unbind().into());
                     }
                 }
                 Ok(result)
             }
             _ => {
-                // Fallback for other types
+                // Fallback for other types - convert to string representation
                 let mut result = Vec::with_capacity(array.len());
                 for i in 0..array.len() {
                     if array.is_null(i) {
-                        result.push(py.None());
+                        result.push(py.None().into_any().into_pyobject(py).unwrap().unbind());
                     } else {
                         result.push(
                             format!("{:?}", array.slice(i, 1))
@@ -914,6 +1168,39 @@ fn arrow_array_to_py_objects(
 // ACCELERATION #1: Token Packing
 // =============================================================================
 
+/// Efficiently pack multiple sequences into fixed-length chunks for LLM training.
+///
+/// This replaces inefficient torch.cat() loops with optimized Rust code,
+/// reducing memory usage and improving training throughput.
+///
+/// # Arguments
+///
+/// * `sequences` - List of token sequences (each a list of integers)
+/// * `max_length` - Maximum length of packed sequences
+/// * `pad_token_id` - Token ID used for padding
+/// * `eos_token_id` - Token ID used for end-of-sequence
+/// * `label_pad_id` - Token ID used for padding in labels
+///
+/// # Returns
+///
+/// Dictionary with keys:
+/// - `input_ids`: Packed input sequences
+/// - `labels`: Packed labels with EOS markers
+/// - `attention_mask`: Attention masks for packed sequences
+///
+/// # Errors
+///
+/// - `ValueError` if `max_length` is 0 or sequences contain negative lengths
+///
+/// # Example
+///
+/// ```python
+/// from fast_axolotl import pack_sequences
+///
+/// sequences = [[1, 2, 3], [4, 5], [6, 7, 8, 9]]
+/// result = pack_sequences(sequences, max_length=10, pad_token_id=0, eos_token_id=2, label_pad_id=-100)
+/// print(result["input_ids"])  # Packed sequences
+/// ```
 #[pyfunction]
 fn pack_sequences(
     py: Python,
@@ -932,17 +1219,21 @@ fn pack_sequences(
     let mut buffer_attention_mask: Vec<i64> = Vec::with_capacity(max_length);
 
     for seq in sequences {
-        let mut input_with_special = seq.clone();
+        // Build input_with_special and labels_with_special without cloning seq
+        let mut input_with_special = Vec::with_capacity(seq.len() + 2);
+        input_with_special.extend_from_slice(&seq);
         input_with_special.push(eos_token_id);
         input_with_special.push(pad_token_id);
 
-        let mut labels_with_special = seq.clone();
+        let mut labels_with_special = Vec::with_capacity(seq.len() + 2);
+        labels_with_special.extend_from_slice(&seq);
         labels_with_special.push(eos_token_id);
         labels_with_special.push(label_pad_id);
 
+        // Attention mask: 1s for all positions except last (padding)
         let seq_len = input_with_special.len();
-        let mut attention = vec![1i64; seq_len - 1];
-        attention.push(0);
+        let mut attention = vec![1i64; seq_len];
+        attention[seq_len - 1] = 0;
 
         if buffer_input_ids.len() == max_length {
             packed_input_ids.push(buffer_input_ids.clone());
@@ -996,6 +1287,41 @@ fn pack_sequences(
     Ok(result.into())
 }
 
+/// Concatenate and pack pre-tokenized sequences with their labels.
+///
+/// Similar to pack_sequences but operates on already-tokenized inputs
+/// with separate input_ids, labels, and attention_masks.
+///
+/// # Arguments
+///
+/// * `input_ids` - List of input token sequences
+/// * `labels` - List of label sequences
+/// * `attention_masks` - List of attention mask sequences
+/// * `max_length` - Maximum length of packed sequences
+/// * `pad_token_id` - Token ID used for padding inputs
+/// * `label_pad_id` - Token ID used for padding labels
+///
+/// # Returns
+///
+/// Dictionary with keys:
+/// - `input_ids`: Packed input sequences
+/// - `labels`: Packed labels
+/// - `attention_mask`: Packed attention masks
+///
+/// # Errors
+///
+/// - `ValueError` if `max_length` is 0 or sequences have mismatched lengths
+///
+/// # Example
+///
+/// ```python
+/// from fast_axolotl import concatenate_and_pack
+///
+/// input_ids = [[1, 2, 3], [4, 5]]
+/// labels = [[1, 2, 3], [4, 5]]
+/// attention_masks = [[1, 1, 1], [1, 1]]
+/// result = concatenate_and_pack(input_ids, labels, attention_masks, max_length=10, pad_token_id=0, label_pad_id=-100)
+/// ```
 #[pyfunction]
 fn concatenate_and_pack(
     py: Python,
@@ -1074,6 +1400,32 @@ fn concatenate_and_pack(
 use std::sync::Mutex;
 use std::thread;
 
+/// Compute SHA256 hashes for rows in parallel for deduplication.
+///
+/// Uses multi-threaded hashing for efficient dataset deduplication.
+///
+/// # Arguments
+///
+/// * `rows` - List of strings to hash
+/// * `num_threads` - Number of threads (0 = auto)
+///
+/// # Returns
+///
+/// List of SHA256 hex hashes in the same order as input
+///
+/// # Errors
+///
+/// - `RuntimeError` if thread pool creation fails
+///
+/// # Example
+///
+/// ```python
+/// from fast_axolotl import parallel_hash_rows
+///
+/// rows = ["row1", "row2", "row1"]
+/// hashes = parallel_hash_rows(rows, num_threads=4)
+/// # ["abc123...", "def456...", "abc123..."]
+/// ```
 #[pyfunction]
 fn parallel_hash_rows(py: Python, rows: Vec<String>, num_threads: usize) -> PyResult<Vec<String>> {
     use sha2::{Digest, Sha256};
@@ -1093,7 +1445,7 @@ fn parallel_hash_rows(py: Python, rows: Vec<String>, num_threads: usize) -> PyRe
     let results: Arc<Mutex<Vec<(usize, String)>>> =
         Arc::new(Mutex::new(Vec::with_capacity(num_rows)));
 
-    py.allow_threads(|| {
+    py.allow_threads(|| -> Result<(), FastAxolotlError> {
         let mut handles = Vec::new();
 
         for thread_id in 0..num_threads {
@@ -1126,16 +1478,54 @@ fn parallel_hash_rows(py: Python, rows: Vec<String>, num_threads: usize) -> PyRe
         }
 
         for handle in handles {
-            handle.join().unwrap();
+            if let Err(e) = handle.join() {
+                return Err(FastAxolotlError::Thread {
+                    message: format!("Thread panicked during hashing: {:?}", e),
+                });
+            }
         }
-    });
+        Ok(())
+    })?;
 
-    let mut results = Arc::try_unwrap(results).unwrap().into_inner().unwrap();
+    // Try to unwrap the Arc - if other references exist, we'll handle it gracefully
+    let results_arc = Arc::clone(&results);
+    let mut results = if let Ok(inner) = Arc::try_unwrap(results) {
+        inner.into_inner().unwrap_or_else(|e| e.into_inner())
+    } else {
+        // Arc still has references - fall back to extracting from locked mutex
+        let guard = results_arc.lock().unwrap_or_else(|e| e.into_inner());
+        let collected: Vec<(usize, String)> = guard.iter().cloned().collect();
+        drop(guard);
+        collected
+    };
     results.sort_by_key(|(idx, _)| *idx);
 
     Ok(results.into_iter().map(|(_, hash)| hash).collect())
 }
 
+/// Find unique rows and their indices for dataset deduplication.
+///
+/// # Arguments
+///
+/// * `rows` - List of strings to deduplicate
+/// * `existing_hashes` - Hashes of rows already seen (for batch processing)
+/// * `num_threads` - Number of threads (0 = auto)
+///
+/// # Returns
+///
+/// Tuple of (unique_indices, new_hashes):
+/// - unique_indices: Indices of unique rows in original order
+/// - new_hashes: Hashes of the unique rows
+///
+/// # Example
+///
+/// ```python
+/// from fast_axolotl import deduplicate_indices
+///
+/// rows = ["a", "b", "a", "c", "b"]
+/// indices, hashes = deduplicate_indices(rows)
+/// # indices = [0, 1, 3], hashes = ["hash(a)", "hash(b)", "hash(c)"]
+/// ```
 #[pyfunction]
 #[pyo3(signature = (rows, existing_hashes=None, num_threads=0))]
 fn deduplicate_indices(
@@ -1167,6 +1557,32 @@ fn deduplicate_indices(
 // ACCELERATION #3: Batch Padding
 // =============================================================================
 
+/// Pad sequences to a uniform length for batch processing.
+///
+/// # Arguments
+///
+/// * `sequences` - List of sequences to pad
+/// * `target_length` - Target length (defaults to max sequence length)
+/// * `pad_value` - Value to use for padding
+/// * `padding_side` - "right" or "left" padding
+/// * `pad_to_multiple_of` - Round up to multiple of this value
+///
+/// # Returns
+///
+/// List of padded sequences
+///
+/// # Errors
+///
+/// - `ValueError` if `padding_side` is not "right" or "left"
+///
+/// # Example
+///
+/// ```python
+/// from fast_axolotl import pad_sequences
+///
+/// result = pad_sequences([[1, 2, 3], [4, 5]], target_length=5, pad_value=0)
+/// # [[1, 2, 3, 0, 0], [4, 5, 0, 0, 0]]
+/// ```
 #[pyfunction]
 #[pyo3(signature = (sequences, target_length=None, pad_value=0, padding_side="right", pad_to_multiple_of=None))]
 fn pad_sequences(
@@ -1177,6 +1593,13 @@ fn pad_sequences(
     padding_side: &str,
     pad_to_multiple_of: Option<usize>,
 ) -> PyResult<Vec<Vec<i64>>> {
+    // Validate padding_side parameter
+    if padding_side != "right" && padding_side != "left" {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "padding_side must be 'right' or 'left'",
+        ));
+    }
+
     if sequences.is_empty() {
         return Ok(Vec::new());
     }
@@ -1218,6 +1641,27 @@ fn pad_sequences(
     Ok(result)
 }
 
+/// Create a padding mask for sequence comparison.
+///
+/// Returns indices that need padding to reach target_length.
+///
+/// # Arguments
+///
+/// * `current_length` - Current sequence length
+/// * `target_length` - Target length to pad to
+///
+/// # Returns
+///
+/// List of indices (0 to target_length - current_length - 1) indicating padding positions
+///
+/// # Example
+///
+/// ```python
+/// from fast_axolotl import create_padding_mask
+///
+/// mask = create_padding_mask(3, 8)
+/// # [0, 1, 2, 3, 4] - 5 positions to pad
+/// ```
 #[pyfunction]
 fn create_padding_mask(
     _py: Python,
