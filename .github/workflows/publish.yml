@@ -21,7 +21,6 @@ jobs:
   validate-version:
     name: Validate version matches release
     runs-on: ubuntu-latest
-    if: github.event_name != 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
 
@@ -32,7 +31,11 @@ jobs:
       - name: Get release tag version
         id: release-version
         run: |
-          tag="${GITHUB_REF#refs/tags/v}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF#refs/tags/v}"
+          else
+            tag="${{ steps.cargo-version.outputs.version }}"
+          fi
           echo "version=$tag" >> $GITHUB_OUTPUT
 
       - name: Validate versions match
