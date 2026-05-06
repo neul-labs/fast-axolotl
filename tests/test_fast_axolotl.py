@@ -20,6 +20,7 @@ def test_version():
     version = fast_axolotl.get_version()
     # Version should contain the package version
     import fast_axolotl as fa
+
     assert fa.__version__ in version
 
 
@@ -430,7 +431,9 @@ class TestErrorPaths:
         from fast_axolotl import pack_sequences
 
         # Using reasonable max_length that fits sequences
-        result = pack_sequences([[1, 2, 3], [4, 5, 6, 7]], max_length=10, pad_token_id=0, eos_token_id=2)
+        result = pack_sequences(
+            [[1, 2, 3], [4, 5, 6, 7]], max_length=10, pad_token_id=0, eos_token_id=2
+        )
         # Should pack sequences efficiently
         assert len(result["input_ids"]) > 0
         assert 2 in result["input_ids"][0]  # Contains EOS token
@@ -439,7 +442,9 @@ class TestErrorPaths:
         """Test concatenate_and_pack with empty input."""
         from fast_axolotl import concatenate_and_pack
 
-        result = concatenate_and_pack([], [], [], max_length=10, pad_token_id=0, label_pad_id=-100)
+        result = concatenate_and_pack(
+            [], [], [], max_length=10, pad_token_id=0, label_pad_id=-100
+        )
         assert result == {"input_ids": [], "labels": [], "attention_mask": []}
 
     def test_create_padding_mask_zero_length(self):
@@ -473,6 +478,7 @@ class TestErrorPaths:
         # "b" at index 1 is NOT in existing_hashes, so it's kept
         # "a" at index 2 IS a duplicate of index 0, so it's skipped
         indices, hashes = deduplicate_indices(["a", "b", "a"], existing_hashes=["a"])
-        assert indices == [0, 1]  # "a" at 0 is new (not same hash object), "b" at 1 is new, "a" at 2 is duplicate
+        assert (
+            indices == [0, 1]
+        )  # "a" at 0 is new (not same hash object), "b" at 1 is new, "a" at 2 is duplicate
         assert len(hashes) == 2
-

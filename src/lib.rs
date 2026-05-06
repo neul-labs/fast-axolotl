@@ -109,12 +109,8 @@ impl From<FastAxolotlError> for PyErr {
             FastAxolotlError::Arrow { .. } => exceptions::PyIOError::new_err(e.to_string()),
             FastAxolotlError::Csv { .. } => exceptions::PyIOError::new_err(e.to_string()),
             FastAxolotlError::Json { .. } => exceptions::PyValueError::new_err(e.to_string()),
-            FastAxolotlError::Thread { .. } => {
-                exceptions::PyRuntimeError::new_err(e.to_string())
-            }
-            FastAxolotlError::Runtime { .. } => {
-                exceptions::PyRuntimeError::new_err(e.to_string())
-            }
+            FastAxolotlError::Thread { .. } => exceptions::PyRuntimeError::new_err(e.to_string()),
+            FastAxolotlError::Runtime { .. } => exceptions::PyRuntimeError::new_err(e.to_string()),
         }
     }
 }
@@ -620,17 +616,25 @@ async fn read_csv_streaming(
                             py.None().into_any().into_pyobject(py).unwrap().unbind()
                         } else if let Ok(int_val) = field.parse::<i64>() {
                             // into_pyobject should not fail for i64
-                            int_val.into_pyobject(py)
+                            int_val
+                                .into_pyobject(py)
                                 .map(|o| o.into_any().unbind())
                                 .unwrap_or_else(|_| {
-                                    eprintln!("warning: Failed to convert int field '{}' to Python", field);
+                                    eprintln!(
+                                        "warning: Failed to convert int field '{}' to Python",
+                                        field
+                                    );
                                     py.None().into_any().into_pyobject(py).unwrap().unbind()
                                 })
                         } else if let Ok(float_val) = field.parse::<f64>() {
-                            float_val.into_pyobject(py)
+                            float_val
+                                .into_pyobject(py)
                                 .map(|o| o.into_any().unbind())
                                 .unwrap_or_else(|_| {
-                                    eprintln!("warning: Failed to convert float field '{}' to Python", field);
+                                    eprintln!(
+                                        "warning: Failed to convert float field '{}' to Python",
+                                        field
+                                    );
                                     py.None().into_any().into_pyobject(py).unwrap().unbind()
                                 })
                         } else if field.eq_ignore_ascii_case("true")
@@ -640,11 +644,15 @@ async fn read_csv_streaming(
                             b.into_pyobject(py)
                                 .map(|o| o.to_owned().into_any().unbind())
                                 .unwrap_or_else(|_| {
-                                    eprintln!("warning: Failed to convert bool field '{}' to Python", field);
+                                    eprintln!(
+                                        "warning: Failed to convert bool field '{}' to Python",
+                                        field
+                                    );
                                     py.None().into_any().into_pyobject(py).unwrap().unbind()
                                 })
                         } else {
-                            field.into_pyobject(py)
+                            field
+                                .into_pyobject(py)
                                 .map(|o| o.into_any().unbind())
                                 .unwrap_or_else(|_| {
                                     eprintln!("warning: Failed to convert string field to Python");
@@ -913,9 +921,7 @@ fn record_batch_to_hashmap(
     Ok(batch_data)
 }
 
-fn json_value_to_py_object(
-    value: serde_json::Value,
-) -> Result<PyObject, FastAxolotlError> {
+fn json_value_to_py_object(value: serde_json::Value) -> Result<PyObject, FastAxolotlError> {
     Ok(Python::with_gil(|py| match value {
         serde_json::Value::Null => py.None(),
         serde_json::Value::Bool(b) => b.into_pyobject(py).unwrap().to_owned().into_any().unbind(),
@@ -965,10 +971,13 @@ fn arrow_array_to_py_objects(
     let py_objects = Python::with_gil(|py| -> Result<Vec<PyObject>, FastAxolotlError> {
         match array.data_type() {
             DataType::Utf8 => {
-                let string_array = array.as_any().downcast_ref::<StringArray>()
-                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
-                        message: format!("Expected StringArray, got {:?}", array.data_type())
-                    })?;
+                let string_array =
+                    array
+                        .as_any()
+                        .downcast_ref::<StringArray>()
+                        .ok_or_else(|| FastAxolotlError::InvalidFormat {
+                            message: format!("Expected StringArray, got {:?}", array.data_type()),
+                        })?;
                 let mut result = Vec::with_capacity(string_array.len());
                 for i in 0..string_array.len() {
                     if string_array.is_null(i) {
@@ -987,9 +996,11 @@ fn arrow_array_to_py_objects(
                 Ok(result)
             }
             DataType::LargeUtf8 => {
-                let string_array = array.as_any().downcast_ref::<LargeStringArray>()
+                let string_array = array
+                    .as_any()
+                    .downcast_ref::<LargeStringArray>()
                     .ok_or_else(|| FastAxolotlError::InvalidFormat {
-                        message: format!("Expected LargeStringArray, got {:?}", array.data_type())
+                        message: format!("Expected LargeStringArray, got {:?}", array.data_type()),
                     })?;
                 let mut result = Vec::with_capacity(string_array.len());
                 for i in 0..string_array.len() {
@@ -1009,10 +1020,11 @@ fn arrow_array_to_py_objects(
                 Ok(result)
             }
             DataType::Int32 => {
-                let int_array = array.as_any().downcast_ref::<Int32Array>()
-                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
-                        message: format!("Expected Int32Array, got {:?}", array.data_type())
-                    })?;
+                let int_array = array.as_any().downcast_ref::<Int32Array>().ok_or_else(|| {
+                    FastAxolotlError::InvalidFormat {
+                        message: format!("Expected Int32Array, got {:?}", array.data_type()),
+                    }
+                })?;
                 let mut result = Vec::with_capacity(int_array.len());
                 for i in 0..int_array.len() {
                     if int_array.is_null(i) {
@@ -1031,10 +1043,11 @@ fn arrow_array_to_py_objects(
                 Ok(result)
             }
             DataType::Int64 => {
-                let int_array = array.as_any().downcast_ref::<Int64Array>()
-                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
-                        message: format!("Expected Int64Array, got {:?}", array.data_type())
-                    })?;
+                let int_array = array.as_any().downcast_ref::<Int64Array>().ok_or_else(|| {
+                    FastAxolotlError::InvalidFormat {
+                        message: format!("Expected Int64Array, got {:?}", array.data_type()),
+                    }
+                })?;
                 let mut result = Vec::with_capacity(int_array.len());
                 for i in 0..int_array.len() {
                     if int_array.is_null(i) {
@@ -1053,10 +1066,13 @@ fn arrow_array_to_py_objects(
                 Ok(result)
             }
             DataType::Float32 => {
-                let float_array = array.as_any().downcast_ref::<Float32Array>()
-                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
-                        message: format!("Expected Float32Array, got {:?}", array.data_type())
-                    })?;
+                let float_array =
+                    array
+                        .as_any()
+                        .downcast_ref::<Float32Array>()
+                        .ok_or_else(|| FastAxolotlError::InvalidFormat {
+                            message: format!("Expected Float32Array, got {:?}", array.data_type()),
+                        })?;
                 let mut result = Vec::with_capacity(float_array.len());
                 for i in 0..float_array.len() {
                     if float_array.is_null(i) {
@@ -1075,10 +1091,13 @@ fn arrow_array_to_py_objects(
                 Ok(result)
             }
             DataType::Float64 => {
-                let float_array = array.as_any().downcast_ref::<Float64Array>()
-                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
-                        message: format!("Expected Float64Array, got {:?}", array.data_type())
-                    })?;
+                let float_array =
+                    array
+                        .as_any()
+                        .downcast_ref::<Float64Array>()
+                        .ok_or_else(|| FastAxolotlError::InvalidFormat {
+                            message: format!("Expected Float64Array, got {:?}", array.data_type()),
+                        })?;
                 let mut result = Vec::with_capacity(float_array.len());
                 for i in 0..float_array.len() {
                     if float_array.is_null(i) {
@@ -1097,10 +1116,13 @@ fn arrow_array_to_py_objects(
                 Ok(result)
             }
             DataType::Boolean => {
-                let bool_array = array.as_any().downcast_ref::<BooleanArray>()
-                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
-                        message: format!("Expected BooleanArray, got {:?}", array.data_type())
-                    })?;
+                let bool_array =
+                    array
+                        .as_any()
+                        .downcast_ref::<BooleanArray>()
+                        .ok_or_else(|| FastAxolotlError::InvalidFormat {
+                            message: format!("Expected BooleanArray, got {:?}", array.data_type()),
+                        })?;
                 let mut result = Vec::with_capacity(bool_array.len());
                 for i in 0..bool_array.len() {
                     if bool_array.is_null(i) {
@@ -1120,10 +1142,11 @@ fn arrow_array_to_py_objects(
                 Ok(result)
             }
             DataType::List(_) => {
-                let list_array = array.as_any().downcast_ref::<ListArray>()
-                    .ok_or_else(|| FastAxolotlError::InvalidFormat {
-                        message: format!("Expected ListArray, got {:?}", array.data_type())
-                    })?;
+                let list_array = array.as_any().downcast_ref::<ListArray>().ok_or_else(|| {
+                    FastAxolotlError::InvalidFormat {
+                        message: format!("Expected ListArray, got {:?}", array.data_type()),
+                    }
+                })?;
                 let mut result = Vec::with_capacity(list_array.len());
                 for i in 0..list_array.len() {
                     if list_array.is_null(i) {
@@ -1131,9 +1154,9 @@ fn arrow_array_to_py_objects(
                     } else {
                         let inner = list_array.value(i);
                         let inner_py = arrow_array_to_py_objects(&inner)?;
-                        let py_list = PyList::new(py, inner_py)
-                            .map_err(|e| FastAxolotlError::Runtime {
-                                message: format!("Failed to create PyList: {}", e)
+                        let py_list =
+                            PyList::new(py, inner_py).map_err(|e| FastAxolotlError::Runtime {
+                                message: format!("Failed to create PyList: {}", e),
                             })?;
                         result.push(py_list.unbind().into());
                     }
