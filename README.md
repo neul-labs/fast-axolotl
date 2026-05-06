@@ -13,7 +13,7 @@ High-performance Rust extensions for [Axolotl](https://github.com/axolotl-ai-clo
 - **Zero-config acceleration** - Just `import fast_axolotl` before axolotl
 - **77x faster streaming** - Rust-based data loading vs HuggingFace datasets
 - **Parallel hashing** - Multi-threaded SHA256 for deduplication
-- **Cross-platform** - Linux, macOS, Windows with Python 3.10-3.12
+- **Cross-platform** - Linux, macOS, Windows with Python 3.10-3.13
 
 ## Quick Start
 

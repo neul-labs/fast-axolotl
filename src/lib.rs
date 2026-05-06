@@ -468,7 +468,6 @@ async fn read_dataset_streaming(
 // Parquet Reader (with compression support)
 // =============================================================================
 
-#[allow(dead_code)]
 async fn read_parquet_streaming(
     file_path: &str,
     compression: Option<&str>,
@@ -516,7 +515,6 @@ async fn read_parquet_streaming(
 // Arrow IPC Reader (with compression support)
 // =============================================================================
 
-#[allow(dead_code)]
 async fn read_arrow_streaming(
     file_path: &str,
     compression: Option<&str>,
@@ -583,7 +581,6 @@ async fn read_feather_streaming(
 // CSV Reader (with compression support)
 // =============================================================================
 
-#[allow(dead_code)]
 async fn read_csv_streaming(
     file_path: &str,
     compression: Option<&str>,
@@ -693,7 +690,6 @@ async fn read_csv_streaming(
 // JSON/JSONL Reader (with compression support)
 // =============================================================================
 
-#[allow(dead_code)]
 async fn read_json_streaming(
     file_path: &str,
     compression: Option<&str>,
@@ -840,7 +836,6 @@ async fn read_json_from_reader<R: Read>(
 // HuggingFace Arrow Dataset Reader
 // =============================================================================
 
-#[allow(dead_code)]
 async fn read_hf_dataset_streaming(
     dir_path: &str,
     batch_size: usize,

@@ -51,8 +51,8 @@ features = ["pyo3/extension-module"]
 python-source = "src"
 module-name = "fast_axolotl._rust_ext"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "ruff>=0.1.0",
