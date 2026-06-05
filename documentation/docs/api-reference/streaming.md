@@ -1,224 +1,125 @@
 # Streaming API
 
-This page documents the streaming data loading functions.
+This page covers the streaming reader, its HuggingFace-compatible wrapper,
+and the helper functions Axolotl uses to decide whether to switch streaming
+on.
 
-## Primary Functions
+All names are importable from `fast_axolotl`.
 
-### `streaming_dataset_reader()`
+---
 
-Create a streaming reader for data files.
+## `streaming_dataset_reader`
 
 ```python
-fast_axolotl.streaming_dataset_reader(
-    path: str,
+def streaming_dataset_reader(
+    file_path: str,
+    dataset_type: str,
     batch_size: int = 1000,
-    columns: list[str] | None = None
-) -> Iterator[dict]
+    num_threads: int = 4,
+) -> Iterator[Dict[str, Any]]
 ```
 
-**Parameters**:
+Stream batches from a dataset file. Yields `Dict[str, List[Any]]` where the
+keys are column names and the values are batch-sized columns.
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `path` | `str` | required | File path or glob pattern |
-| `batch_size` | `int` | `1000` | Number of rows per batch |
-| `columns` | `list[str]` | `None` | Columns to load (None = all) |
+| Parameter | Type | Default | Notes |
+|---|---|---|---|
+| `file_path` | `str` | required | file or directory path |
+| `dataset_type` | `str` | required | one of `parquet`, `arrow`, `feather`, `csv`, `json`, `jsonl`, `text` |
+| `batch_size` | `int` | `1000` | rows per yielded batch |
+| `num_threads` | `int` | `4` | worker threads for I/O / decode |
 
-**Returns**: An iterator yielding dictionaries with column names as keys and lists of values.
-
-**Supported Formats**:
-
-- Parquet (`.parquet`)
-- Arrow (`.arrow`)
-- Feather (`.feather`)
-- JSON (`.json`)
-- JSONL (`.jsonl`, `.ndjson`)
-- CSV (`.csv`)
-- Text (`.txt`)
-
-**Compression**: ZSTD (`.zst`, `.zstd`) and Gzip (`.gz`) are automatically detected.
-
-**Examples**:
-
-Basic usage:
 ```python
 from fast_axolotl import streaming_dataset_reader
 
-for batch in streaming_dataset_reader("data/train.parquet"):
-    print(batch.keys())
-    print(len(batch["input_ids"]))
+for batch in streaming_dataset_reader("data.parquet", "parquet", batch_size=5000):
+    texts = batch["text"]
+    labels = batch["label"]
 ```
 
-With options:
-```python
-reader = streaming_dataset_reader(
-    "data/**/*.parquet",
-    batch_size=500,
-    columns=["input_ids", "labels"]
-)
+Raises:
 
-for batch in reader:
-    process(batch)
-```
+- `ImportError` - Rust extension is not available
+- `FileNotFoundError` - path does not exist
+- `PermissionError` - access denied
+- `ValueError` - invalid `dataset_type` or bad arguments
+- `RuntimeError` - underlying Arrow / Parquet / JSON / CSV error
 
 ---
 
-### `create_rust_streaming_dataset()`
-
-Create a HuggingFace-compatible streaming dataset.
-
-```python
-fast_axolotl.create_rust_streaming_dataset(
-    path: str,
-    batch_size: int = 32,
-    columns: list[str] | None = None
-) -> RustStreamingDataset
-```
-
-**Parameters**:
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `path` | `str` | required | File path or glob pattern |
-| `batch_size` | `int` | `32` | Number of rows per batch |
-| `columns` | `list[str]` | `None` | Columns to load (None = all) |
-
-**Returns**: A `RustStreamingDataset` object compatible with PyTorch DataLoader.
-
-**Example**:
-```python
-from fast_axolotl import create_rust_streaming_dataset
-from torch.utils.data import DataLoader
-
-dataset = create_rust_streaming_dataset(
-    "data/train.parquet",
-    batch_size=32
-)
-
-# Use with DataLoader (batch_size=None since dataset handles batching)
-loader = DataLoader(dataset, batch_size=None, num_workers=0)
-
-for batch in loader:
-    model.train_step(batch)
-```
-
----
-
-## Classes
-
-### `RustStreamingDataset`
-
-A PyTorch-compatible dataset wrapper for streaming data.
+## `RustStreamingDataset`
 
 ```python
 class RustStreamingDataset:
     def __init__(
         self,
-        path: str,
-        batch_size: int = 32,
-        columns: list[str] | None = None
+        file_path: str,
+        dataset_type: str,
+        batch_size: int = 1000,
+        num_threads: int = 4,
+        dataset_keep_in_memory: bool = False,
     )
-
-    def __iter__(self) -> Iterator[dict]
-    def __len__(self) -> int  # Approximate length
 ```
 
-**Methods**:
+HuggingFace-Dataset-compatible iterable wrapper around
+[`streaming_dataset_reader`](#streaming_dataset_reader). Iteration yields
+the same `Dict[str, List[Any]]` batches.
 
-| Method | Description |
-|--------|-------------|
-| `__iter__()` | Iterate over batches |
-| `__len__()` | Get approximate dataset length |
-
-**Example**:
 ```python
 from fast_axolotl import RustStreamingDataset
 
-dataset = RustStreamingDataset("data.parquet", batch_size=32)
+dataset = RustStreamingDataset(
+    file_path="data.parquet",
+    dataset_type="parquet",
+    batch_size=1000,
+)
 
 for batch in dataset:
-    input_ids = batch["input_ids"]
-    labels = batch["labels"]
+    process(batch)
 ```
 
 ---
 
-## Low-Level Functions
-
-### `_rust_streaming_reader()`
-
-Low-level Rust streaming reader (internal use).
+## `create_rust_streaming_dataset`
 
 ```python
-fast_axolotl._rust_streaming_reader(
-    path: str,
-    batch_size: int,
-    columns: list[str] | None
-) -> Iterator
+def create_rust_streaming_dataset(
+    cfg: dict,
+    file_path: str,
+    dataset_type: str,
+) -> Optional[RustStreamingDataset]
 ```
 
-!!! warning
-    This is an internal function. Use `streaming_dataset_reader()` instead.
+Config-driven helper. Returns a `RustStreamingDataset` configured from an
+Axolotl-style config dict (`batch_size`, `num_threads`, etc.) when the Rust
+extension is available and the config opts in
+(`dataset_use_rust_streaming: true`); returns `None` otherwise.
 
 ---
 
-## Error Handling
+## `should_use_rust_streaming`
 
-### Common Exceptions
-
-| Exception | Cause |
-|-----------|-------|
-| `FileNotFoundError` | File or pattern doesn't match any files |
-| `ValueError` | Unsupported format or invalid parameters |
-| `IOError` | File read error or corruption |
-
-**Example**:
 ```python
-from fast_axolotl import streaming_dataset_reader
-
-try:
-    for batch in streaming_dataset_reader("data/*.parquet"):
-        process(batch)
-except FileNotFoundError:
-    print("No matching files found")
-except ValueError as e:
-    print(f"Format error: {e}")
+def should_use_rust_streaming(
+    cfg: dict,
+    file_size_bytes: Optional[int] = None,
+) -> bool
 ```
 
----
+Decide whether streaming is worth turning on for a given config and file
+size. Returns `True` when any of the following hold (and the Rust extension
+is available):
 
-## Performance Notes
+- `cfg["dataset_use_rust_streaming"]` is truthy
+- `cfg["sequence_len"]` exceeds 10,000
+- `file_size_bytes` exceeds roughly 1 GB
 
-### Batch Size Selection
-
-| Dataset Size | Recommended Batch Size | Memory Usage |
-|--------------|----------------------|--------------|
-| < 100K rows | 1000-5000 | Low |
-| 100K-1M rows | 500-2000 | Medium |
-| > 1M rows | 100-1000 | High |
-
-### Format Performance
-
-| Format | Read Speed | Memory Efficiency |
-|--------|-----------|-------------------|
-| Parquet | Fastest | Excellent |
-| Arrow | Very Fast | Excellent |
-| JSONL | Fast | Good |
-| CSV | Moderate | Good |
-| JSON | Slower | Moderate |
-
-### Compression Performance
-
-| Compression | Decompression Speed | Compression Ratio |
-|-------------|--------------------|--------------------|
-| None | Fastest | 1x |
-| ZSTD | Fast | 3-5x |
-| Gzip | Moderate | 2-4x |
+Used by `create_rust_streaming_dataset` to avoid streaming overhead on
+small datasets where the in-memory path is fine.
 
 ---
 
-## See Also
+## See also
 
-- [Streaming Guide](../user-guide/streaming.md) - Usage patterns and examples
-- [Core Functions](core.md) - Format detection utilities
-- [Benchmarks](../performance/benchmarks.md) - Performance data
+- [Streaming Data Loading guide](../user-guide/streaming.md)
+- [Auto-Shimming](../user-guide/shimming.md) - how Axolotl picks the reader up automatically

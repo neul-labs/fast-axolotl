@@ -1,153 +1,158 @@
-# Core Functions
+# Core API
 
-This page documents the core functions available in fast-axolotl.
+The core API covers package metadata, runtime detection, and shim control.
+All names listed here are importable directly from `fast_axolotl`.
 
-## Module Info
+## Module metadata
 
 ### `__version__`
 
-The package version string.
-
 ```python
-import fast_axolotl
-print(fast_axolotl.__version__)  # e.g., "0.1.12"
+fast_axolotl.__version__   # "0.2.0"
 ```
 
-### `rust_available()`
+A plain Python string. For a combined Python + Rust version string, prefer
+[`get_version`](#get_version).
 
-Check if the Rust extension is loaded and available.
+### `RUST_AVAILABLE`
 
 ```python
-fast_axolotl.rust_available() -> bool
+fast_axolotl.RUST_AVAILABLE   # bool
 ```
 
-**Returns**: `True` if Rust acceleration is available, `False` otherwise.
+`True` if the compiled `_rust_ext` module loaded successfully on this
+platform. The package auto-runs [`install`](#install) when this is `True`.
 
-**Example**:
+---
+
+## Runtime detection
+
+### `is_available`
+
 ```python
-if fast_axolotl.rust_available():
-    print("Rust acceleration enabled")
-else:
-    print("Falling back to Python implementation")
+def is_available() -> bool
+```
+
+Convenience wrapper around `RUST_AVAILABLE`. Returns `True` if the Rust
+extension is loaded.
+
+```python
+if not fast_axolotl.is_available():
+    raise RuntimeError("fast-axolotl Rust extension is not available")
+```
+
+### `get_version`
+
+```python
+def get_version() -> str
+```
+
+Returns a combined version string:
+
+```python
+fast_axolotl.get_version()
+# "0.2.0 (rust: 0.2.0)"
+# or  "0.2.0 (rust: not available)" if the Rust extension is missing
 ```
 
 ---
 
-## Shimming Functions
+## Format catalogue
 
-### `install()`
-
-Install acceleration shims into the Axolotl namespace.
+### `list_supported_formats`
 
 ```python
-fast_axolotl.install() -> None
+def list_supported_formats() -> List[str]
 ```
 
-This function replaces Axolotl's Python implementations with Rust-accelerated versions. Call this before importing any Axolotl modules.
+Returns every file format the streaming reader recognises, including
+compressed variants and the `hf_dataset` directory marker:
 
-**Example**:
 ```python
-import fast_axolotl
-fast_axolotl.install()
-
-# Now import axolotl - it will use accelerated functions
-import axolotl
+fast_axolotl.list_supported_formats()
+# ['parquet', 'arrow', 'feather', 'csv', 'json', 'jsonl', 'text',
+#  'parquet.zst', 'parquet.gz', 'arrow.zst', 'arrow.gz',
+#  'json.zst', 'json.gz', 'jsonl.zst', 'jsonl.gz',
+#  'csv.zst', 'csv.gz', 'text.zst', 'text.gz',
+#  'hf_dataset']
 ```
 
-**Notes**:
+### `detect_format`
 
-- Safe to call multiple times (idempotent)
-- Safe to call even if Axolotl is not installed
-- Must be called before importing Axolotl modules
+```python
+def detect_format(file_path: str) -> Tuple[str, Optional[str]]
+```
+
+Returns `(base_format, compression)` based on the path's extension(s):
+
+```python
+fast_axolotl.detect_format("data.parquet")        # ("parquet", None)
+fast_axolotl.detect_format("data.jsonl.zst")      # ("jsonl", "zstd")
+fast_axolotl.detect_format("data.csv.gz")         # ("csv", "gzip")
+fast_axolotl.detect_format("/path/to/hf_dir/")    # ("hf_dataset", None)
+```
+
+Raises `ImportError` if the Rust extension is not loaded.
 
 ---
 
-### `uninstall()`
+## Shim control
 
-Remove acceleration shims and restore original Axolotl implementations.
+### `install`
 
 ```python
-fast_axolotl.uninstall() -> None
+def install() -> bool
 ```
 
-**Example**:
+Install the shim entries into `sys.modules`. Idempotent: returns `True` if
+new entries were installed, `False` if the shim was already in place or
+the Rust extension is unavailable.
+
+The shim is also called automatically at the bottom of
+`fast_axolotl/__init__.py` whenever `RUST_AVAILABLE` is `True`.
+
+### `uninstall`
+
 ```python
-# Temporarily disable acceleration
-fast_axolotl.uninstall()
-
-# Run with original implementation
-result = some_axolotl_function()
-
-# Re-enable acceleration
-fast_axolotl.install()
+def uninstall() -> bool
 ```
+
+Remove the shim. Returns `True` if entries were removed, `False` otherwise.
+Useful for benchmarking against the Axolotl Python baseline.
 
 ---
 
-## Format Detection
+## Full export list
 
-### `detect_format(path)`
-
-Detect the file format and compression of a data file.
+`fast_axolotl.__all__` defines the public API:
 
 ```python
-fast_axolotl.detect_format(path: str) -> dict
+__all__ = [
+    # Core
+    "is_available",
+    "get_version",
+    "install",
+    "uninstall",
+    "RUST_AVAILABLE",
+    # Format Detection
+    "list_supported_formats",
+    "detect_format",
+    # Streaming
+    "streaming_dataset_reader",
+    "RustStreamingDataset",
+    "create_rust_streaming_dataset",
+    "should_use_rust_streaming",
+    # Token Packing
+    "pack_sequences",
+    "concatenate_and_pack",
+    # Parallel Hashing
+    "parallel_hash_rows",
+    "deduplicate_indices",
+    # Batch Padding
+    "pad_sequences",
+    "create_padding_mask",
+]
 ```
 
-**Parameters**:
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `path` | `str` | Path to the file to analyze |
-
-**Returns**: A dictionary with keys:
-
-- `format`: The detected format (`"parquet"`, `"arrow"`, `"json"`, `"jsonl"`, `"csv"`, `"text"`)
-- `compression`: The detected compression (`"zstd"`, `"gzip"`, `None`)
-
-**Example**:
-```python
-info = fast_axolotl.detect_format("data/train.parquet.zst")
-print(info)
-# {'format': 'parquet', 'compression': 'zstd'}
-
-info = fast_axolotl.detect_format("data/train.jsonl")
-print(info)
-# {'format': 'jsonl', 'compression': None}
-```
-
----
-
-### `list_supported_formats()`
-
-List all supported file formats.
-
-```python
-fast_axolotl.list_supported_formats() -> list[str]
-```
-
-**Returns**: A list of supported format names.
-
-**Example**:
-```python
-formats = fast_axolotl.list_supported_formats()
-print(formats)
-# ['parquet', 'arrow', 'feather', 'json', 'jsonl', 'csv', 'text']
-```
-
----
-
-## Quick Reference
-
-| Function | Description |
-|----------|-------------|
-| `rust_available()` | Check if Rust is loaded |
-| `install()` | Enable shimming |
-| `uninstall()` | Disable shimming |
-| `detect_format(path)` | Detect file format |
-| `list_supported_formats()` | List supported formats |
-
-## See Also
-
-- [Streaming API](streaming.md) - Data loading functions
-- [Data Processing API](data-processing.md) - Packing, hashing, padding functions
+The streaming entries are documented in [Streaming API](streaming.md); the
+packing, hashing, and padding entries in [Data Processing API](data-processing.md).

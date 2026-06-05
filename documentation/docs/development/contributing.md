@@ -1,330 +1,194 @@
 # Contributing
 
-Thank you for your interest in contributing to fast-axolotl! This guide will help you get started.
+Thanks for considering a contribution to `fast-axolotl`. The project mixes
+Python and Rust; this page covers the dev workflow for both.
 
-## Development Setup
+## Prerequisites
 
-### Prerequisites
+- Python 3.10, 3.11, or 3.12
+- A Rust toolchain (stable is fine):
 
-1. **Python 3.10+**
-2. **Rust toolchain** (1.70 or later):
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   ```
-3. **maturin** (Rust-Python build tool):
-   ```bash
-   pip install maturin
-   ```
+  ```bash
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  source ~/.cargo/env
+  ```
 
-### Clone and Install
+- Git
+
+## Get a working dev environment
 
 ```bash
-# Clone the repository
-git clone https://github.com/neul-labs/fast-axolotl.git
+git clone https://github.com/neul-labs/fast-axolotl
 cd fast-axolotl
 
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-# or: .venv\Scripts\activate  # Windows
+uv venv && source .venv/bin/activate
+uv pip install -e ".[dev]"
 
-# Install in development mode
+# Build the Rust extension in place
 maturin develop
-
-# Install dev dependencies
-pip install -e ".[dev]"
 ```
 
-### Verify Setup
-
-```bash
-# Run tests
-pytest tests/
-
-# Run type checks
-mypy src/fast_axolotl
-
-# Run linting
-ruff check src/
-```
-
----
-
-## Project Structure
-
-```
-fast-axolotl/
-├── src/
-│   ├── lib.rs                 # Rust extension code
-│   └── fast_axolotl/
-│       ├── __init__.py        # Python API
-│       ├── streaming.py       # Streaming utilities
-│       └── py.typed           # Type hints marker
-├── tests/
-│   └── test_fast_axolotl.py   # Test suite
-├── scripts/
-│   ├── benchmark.py           # Benchmarking script
-│   └── compatibility_test.py  # Compatibility tests
-├── documentation/             # MkDocs documentation
-├── Cargo.toml                 # Rust dependencies
-├── pyproject.toml             # Python project config
-└── README.md
-```
-
----
-
-## Making Changes
-
-### Rust Code
-
-Edit `src/lib.rs` for Rust extension changes:
-
-```rust
-// Example: Adding a new function
-#[pyfunction]
-fn my_new_function(input: &str) -> PyResult<String> {
-    Ok(format!("Processed: {}", input))
-}
-
-// Register in module
-#[pymodule]
-fn _fast_axolotl(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(my_new_function, m)?)?;
-    Ok(())
-}
-```
-
-Rebuild after changes:
+For the release-quality build (used when you're chasing performance
+numbers):
 
 ```bash
 maturin develop --release
 ```
 
-### Python Code
-
-Edit files in `src/fast_axolotl/`:
-
-```python
-# Example: Exposing Rust function in Python API
-from ._fast_axolotl import my_new_function
-
-def my_wrapper(input: str) -> str:
-    """Process input string.
-
-    Args:
-        input: String to process
-
-    Returns:
-        Processed string
-    """
-    return my_new_function(input)
-```
-
----
-
-## Testing
-
-### Run All Tests
+### Verify
 
 ```bash
-pytest tests/ -v
+pytest -v
+ruff check .
+cargo clippy
+cargo fmt --check
 ```
 
-### Run Specific Tests
+## Repository layout
+
+```
+fast-axolotl/
+├── src/
+│   ├── lib.rs                  # Rust extension (PyO3 module `_rust_ext`)
+│   └── fast_axolotl/
+│       ├── __init__.py         # Public Python API + shim install logic
+│       ├── streaming.py        # Streaming helpers
+│       └── py.typed
+├── tests/
+│   └── test_fast_axolotl.py    # pytest suite
+├── scripts/
+│   ├── benchmark.py            # writes BENCHMARK.md
+│   └── compatibility_test.py   # writes COMPATIBILITY.md
+├── docs/                       # high-level Markdown docs (this site is in documentation/)
+├── documentation/              # MkDocs site (you are here)
+├── .github/workflows/          # CI
+├── Cargo.toml                  # Rust crate config
+└── pyproject.toml              # Python + maturin config
+```
+
+## Making changes
+
+### Rust code
+
+The Rust extension lives in `src/lib.rs`. Key building blocks:
+
+- **PyO3 bindings** - `#[pyfunction]` and `#[pymodule]` wire Rust into
+  Python (`_rust_ext`)
+- **Streaming readers** - Parquet, Arrow, Feather, JSON, JSONL, CSV, Text
+- **Token operations** - `pack_sequences`, `concatenate_and_pack`,
+  `pad_sequences`, `create_padding_mask`
+- **Parallel hashing** - `parallel_hash_rows`, `deduplicate_indices`
+
+After editing Rust you must rebuild:
 
 ```bash
-# Run one test file
-pytest tests/test_fast_axolotl.py -v
-
-# Run one test function
-pytest tests/test_fast_axolotl.py::test_streaming_reader -v
-
-# Run with coverage
-pytest tests/ --cov=fast_axolotl --cov-report=html
+maturin develop          # debug
+maturin develop --release  # release / benchmarks
 ```
 
-### Writing Tests
+### Python code
 
-Add tests in `tests/test_fast_axolotl.py`:
+The public Python API lives in `src/fast_axolotl/__init__.py`. It:
+
+- imports the Rust functions from `_rust_ext`
+- wraps them with validation and fallbacks
+- installs the shim into `sys.modules`
+
+`__all__` at the bottom of the file is the source of truth for the public
+API surface.
+
+### Tests
+
+Add unit tests in `tests/test_fast_axolotl.py`:
 
 ```python
-import pytest
-from fast_axolotl import my_new_function
-
-def test_my_new_function():
-    """Test the new function."""
-    result = my_new_function("hello")
-    assert result == "Processed: hello"
-
-def test_my_new_function_edge_cases():
-    """Test edge cases."""
-    assert my_new_function("") == "Processed: "
-
-    with pytest.raises(TypeError):
-        my_new_function(123)  # type: ignore
+def test_new_feature():
+    import fast_axolotl
+    result = fast_axolotl.new_function(...)
+    assert result == expected
 ```
 
----
+Run them with:
 
-## Code Style
+```bash
+pytest -v
+pytest -v -k test_new_feature
+```
+
+## Code style
 
 ### Python
 
-We use `ruff` for linting and formatting:
+[Ruff](https://github.com/astral-sh/ruff) handles both linting and
+formatting. Configuration is in `pyproject.toml`:
 
 ```bash
-# Check code style
-ruff check src/
-
-# Auto-fix issues
-ruff check src/ --fix
-
-# Format code
-ruff format src/
+ruff check .
+ruff check --fix .
+ruff format .
 ```
+
+The configured line length is 88 and the target is `py310`.
 
 ### Rust
 
-We use `rustfmt` and `clippy`:
-
 ```bash
-# Format Rust code
 cargo fmt
-
-# Run linter
-cargo clippy
+cargo clippy --all-targets -- -D warnings
 ```
 
----
+## Pull request flow
 
-## Documentation
+1. Fork the repo and create a branch:
+   ```bash
+   git checkout -b feature/your-thing
+   ```
+2. Make your change. Add tests.
+3. Run the full check suite:
+   ```bash
+   pytest -v
+   ruff check .
+   cargo clippy
+   ```
+4. Commit and push:
+   ```bash
+   git push origin feature/your-thing
+   ```
+5. Open a PR. Keep it focused on one concern; CI must pass.
 
-### Building Docs Locally
+## Benchmarking changes
 
-```bash
-cd documentation
-pip install mkdocs-material mkdocstrings[python]
-mkdocs serve
-```
-
-Visit `http://localhost:8000` to preview.
-
-### Documentation Style
-
-- Use clear, concise language
-- Include code examples for all functions
-- Add type annotations
-- Link to related pages
-
----
-
-## Pull Request Process
-
-### 1. Create a Branch
+If you're touching a hot path, capture before/after numbers:
 
 ```bash
-git checkout -b feature/my-new-feature
-```
-
-### 2. Make Changes
-
-- Write code
-- Add tests
-- Update documentation
-
-### 3. Run Checks
-
-```bash
-# All checks must pass
-pytest tests/
-ruff check src/
-cargo clippy
-cargo test
-```
-
-### 4. Commit
-
-```bash
-git add .
-git commit -m "Add my new feature
-
-- Describe what was added
-- Explain why it's useful"
-```
-
-### 5. Push and Create PR
-
-```bash
-git push origin feature/my-new-feature
-```
-
-Then create a Pull Request on GitHub.
-
-### PR Checklist
-
-- [ ] Tests pass
-- [ ] Code is formatted
-- [ ] Documentation updated
-- [ ] Changelog entry added (if applicable)
-
----
-
-## Benchmarking
-
-### Run Benchmarks
-
-```bash
+# baseline
+maturin develop --release
 python scripts/benchmark.py
+mv BENCHMARK.md BENCHMARK_before.md
+
+# your change
+python scripts/benchmark.py
+diff BENCHMARK_before.md BENCHMARK.md
 ```
 
-### Adding New Benchmarks
+Paste the comparison into the PR description.
 
-Edit `scripts/benchmark.py`:
+## Release process
 
-```python
-def benchmark_my_function():
-    """Benchmark my new function."""
-    import time
-    from fast_axolotl import my_new_function
+Releases are automated by GitHub Actions:
 
-    # Setup
-    data = ["test"] * 10000
+1. Bump `version` in `Cargo.toml` and `__version__` in
+   `src/fast_axolotl/__init__.py`.
+2. Cut a GitHub release.
+3. CI builds wheels for all supported platforms and publishes to PyPI via
+   OIDC.
 
-    # Benchmark
-    start = time.time()
-    for item in data:
-        my_new_function(item)
-    elapsed = time.time() - start
+## Getting help
 
-    return {
-        "items": len(data),
-        "time": elapsed,
-        "throughput": len(data) / elapsed
-    }
-```
+- Issues: <https://github.com/neul-labs/fast-axolotl/issues>
+- Discussions: <https://github.com/neul-labs/fast-axolotl/discussions>
 
----
+## License
 
-## Release Process
-
-Releases are automated via GitHub Actions:
-
-1. Update version in `Cargo.toml` and `src/fast_axolotl/__init__.py`
-2. Update `CHANGELOG.md`
-3. Create a git tag: `git tag v0.x.x`
-4. Push tag: `git push origin v0.x.x`
-
-CI will build wheels and publish to PyPI.
-
----
-
-## Getting Help
-
-- **Issues**: [GitHub Issues](https://github.com/neul-labs/fast-axolotl/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/neul-labs/fast-axolotl/discussions)
-
----
-
-## Code of Conduct
-
-Please be respectful and constructive in all interactions. We're all here to build great software together.
+By contributing you agree your contributions will be licensed under the
+project's MIT licence.

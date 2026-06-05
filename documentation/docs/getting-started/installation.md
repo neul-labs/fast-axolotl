@@ -1,168 +1,133 @@
 # Installation
 
-This guide covers all installation methods for fast-axolotl.
+`fast-axolotl` ships pre-built wheels for Linux, macOS, and Windows on Python
+3.10-3.12. For most users a single `pip install` is enough.
 
 ## Requirements
 
-- **Python**: 3.10, 3.11, or 3.12
-- **Platforms**: Linux (x86_64, aarch64), macOS (x86_64, Apple Silicon), Windows (x86_64)
+- **Python**: 3.10, 3.11, or 3.12 (3.9 is not supported, 3.13+ is not yet tested)
+- **Operating system**: Linux (x86_64, aarch64), macOS (x86_64, arm64), or Windows (x86_64)
+- **Runtime deps**: `datasets >= 2.14.0`, `numpy >= 1.24.0` (installed automatically)
 
-## Install from PyPI (Recommended)
+No Rust toolchain is required when installing from PyPI.
 
-The simplest way to install fast-axolotl is via pip:
+## Install from PyPI
 
 ```bash
 pip install fast-axolotl
 ```
 
-Pre-built wheels are available for all supported platforms, so no compilation is required.
-
-## Install from Source
-
-If you need to build from source (e.g., for development or unsupported platforms):
-
-### Prerequisites
-
-1. **Rust toolchain** (1.70 or later):
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   ```
-
-2. **maturin** (Rust-Python build tool):
-   ```bash
-   pip install maturin
-   ```
-
-### Build and Install
+Or using [uv](https://github.com/astral-sh/uv):
 
 ```bash
-# Clone the repository
-git clone https://github.com/neul-labs/fast-axolotl.git
-cd fast-axolotl
-
-# Build and install in development mode
-maturin develop --release
-
-# Or build a wheel
-maturin build --release
-pip install target/wheels/fast_axolotl-*.whl
+uv add fast-axolotl
+# or, inside an existing project
+uv pip install fast-axolotl
 ```
 
-## Verify Installation
+## Install Alongside Axolotl
 
-After installation, verify that fast-axolotl is working correctly:
-
-```python
-import fast_axolotl
-
-# Check version
-print(f"Version: {fast_axolotl.__version__}")
-
-# Check Rust extension
-print(f"Rust available: {fast_axolotl.rust_available()}")
-
-# List supported formats
-print(f"Formats: {fast_axolotl.list_supported_formats()}")
-```
-
-Expected output:
-
-```
-Version: 0.1.x
-Rust available: True
-Formats: ['parquet', 'arrow', 'feather', 'json', 'jsonl', 'csv', 'text']
-```
-
-## Installation with Axolotl
-
-fast-axolotl is designed to work alongside Axolotl. Install both:
+`fast-axolotl` is designed to live next to Axolotl; install both and let the
+shim do the rest:
 
 ```bash
 pip install axolotl fast-axolotl
 ```
 
-Then enable acceleration in your training script:
+```python
+import fast_axolotl  # auto-installs the shim before axolotl is imported
+import axolotl
+```
+
+## Install from Source
+
+You only need this path for unsupported platforms or to hack on the Rust
+extension.
+
+### Prerequisites
+
+```bash
+# Rust toolchain
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+
+# maturin (Rust-Python build tool)
+pip install maturin
+```
+
+### Clone and build
+
+```bash
+git clone https://github.com/neul-labs/fast-axolotl.git
+cd fast-axolotl
+
+# uv path (recommended)
+uv venv && source .venv/bin/activate
+uv pip install -e .
+
+# or pip + maturin
+maturin develop --release
+```
+
+For development with tests and linters:
+
+```bash
+uv pip install -e ".[dev]"
+maturin develop
+```
+
+## Verify the Install
 
 ```python
 import fast_axolotl
-fast_axolotl.install()
 
-# Continue with normal axolotl usage
+print(fast_axolotl.get_version())
+# 0.2.0 (rust: 0.2.0)
+
+print(fast_axolotl.is_available())
+# True
+
+print(fast_axolotl.list_supported_formats())
+# ['parquet', 'arrow', 'feather', 'csv', 'json', 'jsonl', 'text',
+#  'parquet.zst', 'parquet.gz', ..., 'hf_dataset']
 ```
+
+If `is_available()` returns `False`, the Rust extension failed to load - see
+[Troubleshooting](#troubleshooting) below.
 
 ## Troubleshooting
 
-### ImportError: Rust extension not found
+### `is_available()` returns `False`
 
-If you see this error, the Rust extension failed to load. Try:
+The pure-Python wrapper loaded but the compiled `_rust_ext` module did not.
+Typical causes:
 
-1. **Reinstall the package**:
+1. You built from source without `--release`. Rebuild with:
    ```bash
-   pip uninstall fast-axolotl
-   pip install fast-axolotl --no-cache-dir
+   maturin develop --release
+   ```
+2. Your Python version is outside the 3.10-3.12 range.
+3. The wheel for your platform is missing - reinstall with `--no-cache-dir`:
+   ```bash
+   pip install --force-reinstall --no-cache-dir fast-axolotl
    ```
 
-2. **Check Python version**: Ensure you're using Python 3.10, 3.11, or 3.12.
+### Platform-specific notes
 
-3. **Check platform**: Verify your platform is supported (see Requirements above).
+**Linux** - requires glibc 2.17+ (any modern distribution). musl libc is not
+currently supported. On Debian/Ubuntu you may need `python3-dev` when
+building from source.
 
-### Build errors from source
+**macOS** - First import may be slow because of code-signing verification;
+subsequent imports are fast. Building from source requires
+`xcode-select --install`.
 
-If building from source fails:
-
-1. **Update Rust**:
-   ```bash
-   rustup update
-   ```
-
-2. **Install build dependencies** (Linux):
-   ```bash
-   sudo apt-get install build-essential python3-dev
-   ```
-
-3. **Install build dependencies** (macOS):
-   ```bash
-   xcode-select --install
-   ```
-
-### Performance issues
-
-If performance is worse than expected:
-
-1. Ensure you're using the release build (not debug)
-2. Check that the Rust extension is loaded: `fast_axolotl.rust_available()`
-3. See [Best Practices](../performance/best-practices.md) for optimization tips
-
-## Virtual Environments
-
-We recommend using a virtual environment:
-
-=== "venv"
-
-    ```bash
-    python -m venv .venv
-    source .venv/bin/activate  # Linux/macOS
-    .venv\Scripts\activate     # Windows
-    pip install fast-axolotl
-    ```
-
-=== "conda"
-
-    ```bash
-    conda create -n fast-axolotl python=3.11
-    conda activate fast-axolotl
-    pip install fast-axolotl
-    ```
-
-=== "uv"
-
-    ```bash
-    uv venv
-    source .venv/bin/activate
-    uv pip install fast-axolotl
-    ```
+**Windows** - Use forward slashes in paths for consistency. Paths longer
+than 260 characters can fail without long-path support enabled. Building
+from source requires the Visual Studio "Desktop development with C++"
+workload.
 
 ## Next Steps
 
-- [Quick Start](quick-start.md) - Get started with your first example
-- [Streaming Data Guide](../user-guide/streaming.md) - Learn about streaming data loading
+- [Quick Start](quick-start.md) - run your first accelerated example
+- [Auto-Shimming](../user-guide/shimming.md) - what the shim actually patches

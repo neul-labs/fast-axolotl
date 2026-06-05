@@ -1,195 +1,147 @@
 # Quick Start
 
-Get up and running with fast-axolotl in minutes.
+This page walks through the two ways you'll use `fast-axolotl`: as a
+transparent shim for an existing Axolotl install, and as a direct Rust API
+you call from your own code.
 
-## Method 1: Auto-Shimming (Recommended)
+## Option 1: Drop-in Acceleration
 
-The easiest way to use fast-axolotl is with automatic shimming. This transparently accelerates Axolotl without any code changes:
+Import order matters. Bring in `fast_axolotl` **before** `axolotl` so the
+shim has a chance to install itself:
+
+```python
+import fast_axolotl  # installs the shim on import (when Rust ext is available)
+import axolotl       # now resolves to the accelerated implementations
+```
+
+The shim is installed automatically at import time. You can drive it
+manually if you need to:
 
 ```python
 import fast_axolotl
 
-# Install acceleration shims
-fast_axolotl.install()
-
-# Now use Axolotl as normal - it's automatically accelerated!
-from axolotl.utils.data import load_tokenized_prepared_datasets
-# ... your training code
+fast_axolotl.is_available()   # True if the Rust extension loaded
+fast_axolotl.install()        # re-install (idempotent)
+fast_axolotl.uninstall()      # remove the shim
 ```
 
-That's it! All compatible Axolotl operations now use Rust-accelerated implementations.
+See [Auto-Shimming](../user-guide/shimming.md) for the full list of patched modules.
 
-### Disabling Shimming
+## Option 2: Direct API
 
-To temporarily disable acceleration:
+The Rust functions are also exported directly from `fast_axolotl`. Use them
+wherever you have a hot loop.
 
-```python
-fast_axolotl.uninstall()
-```
-
-## Method 2: Direct API Usage
-
-For more control, use the fast-axolotl functions directly:
-
-### Streaming Data Loading
+### Streaming a dataset
 
 ```python
 from fast_axolotl import streaming_dataset_reader
 
-# Stream from a Parquet file
-for batch in streaming_dataset_reader("data/train.parquet", batch_size=1000):
-    input_ids = batch["input_ids"]
-    labels = batch["labels"]
-    # Process batch...
+for batch in streaming_dataset_reader(
+    file_path="/path/to/data.parquet",
+    dataset_type="parquet",
+    batch_size=1000,
+    num_threads=4,
+):
+    texts  = batch.get("text", [])
+    labels = batch.get("label", [])
+    train_step(texts, labels)
 ```
 
-### With Glob Patterns
+`dataset_type` accepts `"parquet"`, `"arrow"`, `"feather"`, `"json"`,
+`"jsonl"`, `"csv"`, or `"text"`. Compression (`.zst`, `.gz`) is detected from
+the filename automatically.
 
-```python
-# Load from multiple files
-reader = streaming_dataset_reader(
-    "data/**/*.parquet",
-    batch_size=500,
-    columns=["input_ids", "attention_mask", "labels"]
-)
-
-for batch in reader:
-    process(batch)
-```
-
-### Token Packing
+### Packing token sequences
 
 ```python
 from fast_axolotl import pack_sequences
-import torch
 
-# Your tokenized sequences
-sequences = [
-    torch.tensor([1, 2, 3]),
-    torch.tensor([4, 5]),
-    torch.tensor([6, 7, 8, 9]),
-]
-
-# Pack into fixed-length chunks
-packed = pack_sequences(
-    sequences,
-    max_length=8,
-    pad_token_id=0
+result = pack_sequences(
+    sequences=[[1, 2, 3], [4, 5], [6, 7, 8, 9]],
+    max_length=10,
+    pad_token_id=0,
+    eos_token_id=2,
+    label_pad_id=-100,
 )
-# Result: tensor([[1, 2, 3, 4, 5, 0, 0, 0], [6, 7, 8, 9, 0, 0, 0, 0]])
+# result == {"input_ids": [...], "labels": [...], "attention_mask": [...]}
 ```
 
-### Parallel Deduplication
+### Parallel deduplication
 
 ```python
 from fast_axolotl import parallel_hash_rows, deduplicate_indices
 
-# Your dataset rows (as bytes)
-rows = [b"row1", b"row2", b"row1", b"row3", b"row2"]
+rows = [str(row) for row in dataset]
+hashes = parallel_hash_rows(rows, num_threads=0)   # 0 = auto-detect cores
 
-# Get unique indices
-unique_idx = deduplicate_indices(rows)
-# Result: [0, 1, 3] - indices of unique rows
+unique_indices, all_hashes = deduplicate_indices(rows)
+deduped = dataset.select(unique_indices)
 ```
 
-### Batch Padding
+### Batch padding
 
 ```python
 from fast_axolotl import pad_sequences
 
-sequences = [
-    [1, 2, 3],
-    [4, 5],
-    [6, 7, 8, 9, 10],
-]
-
-# Pad to uniform length
 padded = pad_sequences(
-    sequences,
+    [[1, 2, 3], [4, 5]],
+    target_length=8,
     pad_value=0,
-    padding_side="right"
+    padding_side="right",
 )
-# All sequences now have length 5
+# [[1, 2, 3, 0, 0, 0, 0, 0],
+#  [4, 5, 0, 0, 0, 0, 0, 0]]
 ```
 
-## Method 3: HuggingFace Dataset Compatible
+## Option 3: HuggingFace-Compatible Streaming
 
-fast-axolotl provides a HuggingFace-compatible streaming dataset:
+`RustStreamingDataset` is a thin HuggingFace-compatible wrapper that yields
+batches as Python dicts:
 
 ```python
-from fast_axolotl import create_rust_streaming_dataset
+from fast_axolotl import RustStreamingDataset
 
-# Create HF-compatible streaming dataset
-dataset = create_rust_streaming_dataset(
-    "data/train.parquet",
-    batch_size=32
+dataset = RustStreamingDataset(
+    file_path="/path/to/data.parquet",
+    dataset_type="parquet",
+    batch_size=1000,
+    num_threads=4,
 )
 
-# Works with DataLoader
-from torch.utils.data import DataLoader
-loader = DataLoader(dataset, batch_size=None)  # batch_size handled by dataset
-
-for batch in loader:
-    model(batch)
+for batch in dataset:
+    train_step(batch)
 ```
 
-## Complete Training Example
-
-Here's a complete example integrating fast-axolotl with a training loop:
+There is also a config-driven helper that decides for you whether streaming
+should kick in based on an Axolotl config dict:
 
 ```python
-import fast_axolotl
-from fast_axolotl import (
-    streaming_dataset_reader,
-    pack_sequences,
-    pad_sequences,
-)
-import torch
+from fast_axolotl import should_use_rust_streaming, create_rust_streaming_dataset
 
-# Enable shimming for any axolotl code
-fast_axolotl.install()
+cfg = {"dataset_use_rust_streaming": True, "sequence_len": 32768}
 
-def train():
-    # Stream training data
-    for batch in streaming_dataset_reader("data/train.parquet", batch_size=32):
-        input_ids = batch["input_ids"]
-        labels = batch["labels"]
-
-        # Pack sequences for efficient training
-        packed_inputs = pack_sequences(input_ids, max_length=2048, pad_token_id=0)
-        packed_labels = pack_sequences(labels, max_length=2048, pad_token_id=-100)
-
-        # Your training step here
-        loss = model(packed_inputs, labels=packed_labels).loss
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
-
-if __name__ == "__main__":
-    train()
+if should_use_rust_streaming(cfg, file_size_bytes=2 * 1024**3):
+    ds = create_rust_streaming_dataset(cfg, "/path/to/data.parquet", "parquet")
 ```
 
-## Checking What's Accelerated
+## Axolotl YAML Config
 
-To see what functions are using Rust acceleration:
+Enable the same features inside an Axolotl YAML config:
 
-```python
-import fast_axolotl
+```yaml
+# Force-enable Rust streaming
+dataset_use_rust_streaming: true
 
-# Check if Rust is available
-print(f"Rust available: {fast_axolotl.rust_available()}")
+# Auto-enables when files are >1GB or sequence_len > 10000
+sequence_len: 32768
 
-# List supported formats
-print(f"Supported formats: {fast_axolotl.list_supported_formats()}")
-
-# After installing shims
-fast_axolotl.install()
-print("Shims installed - Axolotl is now accelerated")
+# Deduplication automatically uses parallel hashing once the shim is in place
+dedupe: true
 ```
 
 ## Next Steps
 
-- [Streaming Data Guide](../user-guide/streaming.md) - Deep dive into streaming
-- [Token Packing Guide](../user-guide/token-packing.md) - Efficient sequence packing
-- [API Reference](../api-reference/core.md) - Complete function reference
-- [Benchmarks](../performance/benchmarks.md) - Performance comparisons
+- [Streaming Data Loading](../user-guide/streaming.md) - in-depth streaming guide
+- [Token Packing](../user-guide/token-packing.md) - how packing works under the hood
+- [API Reference](../api-reference/core.md) - every exported function

@@ -1,237 +1,166 @@
 # Streaming Data Loading
 
-fast-axolotl's streaming data loader is one of its most powerful features, providing up to **77x faster** data loading compared to Python-based solutions.
+`fast-axolotl`'s streaming reader is the largest single win in the package:
+**77x faster** Parquet loading than the Python baseline in the project
+benchmark. This guide explains the API and how to get the most out of it.
 
-## Overview
+## Why streaming?
 
-The streaming reader efficiently loads large datasets that don't fit in memory by:
+The Rust reader avoids the per-row Python object overhead of `datasets` and
+streams record batches straight from the file:
 
-- Reading data in configurable batches
-- Supporting multiple file formats natively
-- Handling compression transparently
-- Using memory-mapped I/O where possible
+- Native Parquet / Arrow / CSV / JSON parsers (`arrow`, `parquet`, `csv`,
+  `arrow-json` crates)
+- Multi-threaded I/O via Tokio
+- Transparent ZSTD and Gzip decompression
+- HuggingFace Arrow-dataset directories supported out of the box
 
 ## Basic Usage
 
 ```python
 from fast_axolotl import streaming_dataset_reader
 
-# Simple streaming from a single file
-for batch in streaming_dataset_reader("data/train.parquet"):
+for batch in streaming_dataset_reader(
+    file_path="/path/to/train.parquet",
+    dataset_type="parquet",
+    batch_size=1000,
+    num_threads=4,
+):
     process(batch)
 ```
 
-## Configuration Options
+Each yielded `batch` is a `Dict[str, List[Any]]` keyed by column name.
 
-### Batch Size
+### Parameters
 
-Control how many rows are loaded per iteration:
-
-```python
-# Load 1000 rows at a time
-reader = streaming_dataset_reader(
-    "data/train.parquet",
-    batch_size=1000
-)
-```
+| Parameter | Type | Default | Purpose |
+|---|---|---|---|
+| `file_path` | `str` | required | path to file or directory |
+| `dataset_type` | `str` | required | one of `parquet`, `arrow`, `feather`, `csv`, `json`, `jsonl`, `text` |
+| `batch_size` | `int` | `1000` | rows per yielded batch |
+| `num_threads` | `int` | `4` | worker threads for I/O / decode |
 
 !!! tip "Choosing batch size"
-    Larger batch sizes improve throughput but use more memory. Start with 1000 and adjust based on your memory constraints.
+    Larger batches improve throughput but use more memory. 1,000-10,000 is a
+    good starting range for typical LLM training rows.
 
-### Column Selection
+## Format Detection
 
-Load only the columns you need:
-
-```python
-reader = streaming_dataset_reader(
-    "data/train.parquet",
-    columns=["input_ids", "attention_mask", "labels"]
-)
-```
-
-This reduces memory usage and improves performance when your dataset has many columns.
-
-### Multiple Files
-
-Use glob patterns to stream from multiple files:
+If you don't already know the format, `detect_format` returns `(format, compression)`:
 
 ```python
-# All parquet files in a directory
-reader = streaming_dataset_reader("data/*.parquet")
+from fast_axolotl import detect_format, list_supported_formats
 
-# Recursive glob
-reader = streaming_dataset_reader("data/**/*.parquet")
+detect_format("data.parquet")        # ("parquet", None)
+detect_format("data.jsonl.zst")      # ("jsonl", "zstd")
+detect_format("data.csv.gz")         # ("csv", "gzip")
+detect_format("/path/to/hf_dir/")    # ("hf_dataset", None)
 
-# Multiple patterns
-reader = streaming_dataset_reader("data/train_*.parquet")
+list_supported_formats()
+# ['parquet', 'arrow', 'feather', 'csv', 'json', 'jsonl', 'text',
+#  'parquet.zst', 'parquet.gz', 'arrow.zst', 'arrow.gz',
+#  'json.zst', 'json.gz', 'jsonl.zst', 'jsonl.gz',
+#  'csv.zst', 'csv.gz', 'text.zst', 'text.gz', 'hf_dataset']
 ```
 
 ## Supported Formats
 
-fast-axolotl automatically detects file formats:
+| Format | Extensions | Notes |
+|---|---|---|
+| Parquet | `.parquet` | Columnar, recommended |
+| Arrow IPC | `.arrow`, `.ipc` | Zero-copy capable |
+| Feather | `.feather` | Arrow IPC v2 |
+| JSON | `.json` | Array of objects |
+| JSONL | `.jsonl`, `.ndjson` | Line-delimited |
+| CSV / TSV | `.csv`, `.tsv` | Comma/tab |
+| Text | `.txt` | One record per line |
+| HuggingFace dataset | directory with `dataset_info.json` | auto-detected |
 
-| Format | Extensions | Description |
-|--------|-----------|-------------|
-| Parquet | `.parquet` | Columnar format, best performance |
-| Arrow | `.arrow` | Zero-copy memory mapping |
-| Feather | `.feather` | Fast binary format |
-| JSON | `.json` | Standard JSON arrays |
-| JSONL | `.jsonl`, `.ndjson` | Line-delimited JSON |
-| CSV | `.csv` | Comma-separated values |
-| Text | `.txt` | Plain text (one row per line) |
+All file formats may be transparently `.zst`- or `.gz`-compressed.
 
-### Format Detection
+## HuggingFace-Compatible Wrapper
 
-```python
-from fast_axolotl import detect_format
-
-# Automatic detection
-format_info = detect_format("data/train.parquet.zst")
-print(format_info)
-# {'format': 'parquet', 'compression': 'zstd'}
-```
-
-### Compression Support
-
-ZSTD and Gzip compression are automatically handled:
+`RustStreamingDataset` exposes the same reader as an iterable class - useful
+for slotting into existing dataset pipelines:
 
 ```python
-# These all work automatically
-reader = streaming_dataset_reader("data/train.parquet.zst")  # ZSTD
-reader = streaming_dataset_reader("data/train.json.gz")      # Gzip
-reader = streaming_dataset_reader("data/train.csv.zstd")     # ZSTD
-```
+from fast_axolotl import RustStreamingDataset
 
-## Advanced Usage
-
-### Custom Iteration
-
-```python
-reader = streaming_dataset_reader("data/train.parquet", batch_size=500)
-
-# Manual iteration
-batch = next(iter(reader))
-
-# Check batch contents
-print(batch.keys())      # Column names
-print(len(batch["input_ids"]))  # Batch size
-```
-
-### Memory-Efficient Processing
-
-For very large datasets, process and discard batches to minimize memory:
-
-```python
-def process_large_dataset(path):
-    total_rows = 0
-
-    for batch in streaming_dataset_reader(path, batch_size=1000):
-        # Process batch
-        total_rows += len(batch["input_ids"])
-
-        # Batch is automatically freed when loop continues
-
-    return total_rows
-```
-
-### Combining with PyTorch DataLoader
-
-```python
-from fast_axolotl import create_rust_streaming_dataset
-from torch.utils.data import DataLoader
-
-# Create HF-compatible dataset
-dataset = create_rust_streaming_dataset(
-    "data/train.parquet",
-    batch_size=32
+dataset = RustStreamingDataset(
+    file_path="/data/train.parquet",
+    dataset_type="parquet",
+    batch_size=1000,
+    num_threads=4,
 )
 
-# Use with DataLoader (batch_size=None since dataset handles batching)
-loader = DataLoader(
-    dataset,
-    batch_size=None,
-    num_workers=0  # Rust handles parallelism
-)
-
-for batch in loader:
-    model.train_step(batch)
+for batch in dataset:
+    train_step(batch)
 ```
+
+For config-driven plumbing inside Axolotl, `create_rust_streaming_dataset`
+and `should_use_rust_streaming` accept the YAML config dict directly. The
+default rule of thumb is: enable streaming when
+`dataset_use_rust_streaming: true`, or when sequence lengths exceed 10,000
+or files are larger than 1 GB.
 
 ## Performance Tips
 
-### 1. Use Parquet Format
+### Prefer Parquet
 
-Parquet offers the best performance due to columnar storage and efficient compression:
+Parquet's columnar layout plays best with the Rust reader. Convert other
+formats when possible:
 
 ```python
-# Convert other formats to Parquet for best streaming performance
 import pandas as pd
 
-df = pd.read_json("data.json")
-df.to_parquet("data.parquet")
+pd.read_json("data.jsonl", lines=True).to_parquet("data.parquet")
 ```
 
-### 2. Select Only Needed Columns
+### Use ZSTD compression
+
+ZSTD strikes a good balance between compression ratio and decode speed:
 
 ```python
-# Faster - only loads needed columns
-reader = streaming_dataset_reader(
-    "data/train.parquet",
-    columns=["input_ids", "labels"]
-)
-
-# Slower - loads all columns
-reader = streaming_dataset_reader("data/train.parquet")
-```
-
-### 3. Use ZSTD Compression
-
-ZSTD offers excellent compression with fast decompression:
-
-```python
-# Create ZSTD-compressed Parquet
 import pyarrow.parquet as pq
 
-pq.write_table(
-    table,
-    "data.parquet",
-    compression="zstd"
-)
+pq.write_table(table, "data.parquet", compression="zstd")
 ```
 
-### 4. Batch Size Tuning
+### Right-size `batch_size`
 
-| Dataset Size | Recommended Batch Size |
-|--------------|----------------------|
-| < 100K rows | 1000-5000 |
-| 100K - 1M rows | 500-2000 |
-| > 1M rows | 100-1000 |
+| Dataset size | Suggested `batch_size` |
+|---|---|
+| < 100K rows | 1,000-5,000 |
+| 100K - 1M rows | 500-2,000 |
+| > 1M rows | 100-1,000 |
+
+### Let the reader manage threads
+
+`num_threads=4` is a sensible default; raise it on machines with many cores
+and fast storage. The reader uses a Tokio multi-thread runtime under the
+hood, so Python-level worker pools usually aren't needed.
 
 ## Error Handling
 
-```python
-from fast_axolotl import streaming_dataset_reader
+The reader raises standard Python exceptions:
 
+- `FileNotFoundError` - the path does not exist
+- `PermissionError` - access denied
+- `ValueError` - invalid argument (bad `dataset_type`, bad batch_size, ...)
+- `RuntimeError` - underlying Arrow / Parquet / CSV / JSON error
+
+```python
 try:
-    for batch in streaming_dataset_reader("data/train.parquet"):
+    for batch in streaming_dataset_reader(path, "parquet"):
         process(batch)
 except FileNotFoundError:
-    print("Data file not found")
+    log.error("missing dataset: %s", path)
 except ValueError as e:
-    print(f"Format error: {e}")
+    log.error("bad streaming config: %s", e)
 ```
 
-## Comparison with Alternatives
+## See also
 
-| Feature | fast-axolotl | HuggingFace datasets | pandas |
-|---------|--------------|---------------------|--------|
-| Memory efficiency | Excellent | Good | Poor |
-| Speed | 77x faster | 1x baseline | 0.5x |
-| Format support | 7 formats | Many | Many |
-| Compression | Auto | Manual | Manual |
-
-## Next Steps
-
-- [Token Packing](token-packing.md) - Efficiently pack streamed sequences
-- [API Reference](../api-reference/streaming.md) - Complete streaming API docs
-- [Benchmarks](../performance/benchmarks.md) - Detailed performance data
+- [Streaming API](../api-reference/streaming.md)
+- [Benchmarks](../performance/benchmarks.md)
+- [Auto-Shimming](shimming.md) - how Axolotl picks up the Rust reader automatically

@@ -1,261 +1,103 @@
-# Parallel Hashing & Deduplication
+# Parallel Hashing and Deduplication
 
-fast-axolotl provides multi-threaded SHA256 hashing for efficient dataset deduplication, achieving **1.9x speedup** over Python's hashlib.
+`fast-axolotl` ships two Rust functions for multi-threaded SHA256
+deduplication:
 
-## Why Parallel Hashing?
+- `parallel_hash_rows` - hash a list of strings in parallel
+- `deduplicate_indices` - return the indices of the first occurrence of
+  each unique row
 
-Dataset deduplication is crucial for LLM training:
+The repo benchmark shows a **1.9x speedup** over Python's `hashlib` at
+100,000 rows on 16 cores.
 
-- Removes exact duplicates that can cause overfitting
-- Reduces training time and costs
-- Improves model generalization
-
-The bottleneck is usually hashing millions of rows - fast-axolotl parallelizes this across all CPU cores.
-
-## Basic Usage
-
-### Computing Hashes
+## `parallel_hash_rows`
 
 ```python
 from fast_axolotl import parallel_hash_rows
 
-# Your data rows (as bytes)
-rows = [
-    b"This is the first document",
-    b"This is the second document",
-    b"This is the first document",  # duplicate
-    b"This is the third document",
-]
-
-# Compute SHA256 hashes in parallel
-hashes = parallel_hash_rows(rows)
-
-print(hashes)
-# ['a1b2c3...', 'd4e5f6...', 'a1b2c3...', 'g7h8i9...']
+rows = [str(row) for row in dataset]
+hashes = parallel_hash_rows(rows, num_threads=0)  # 0 = auto-detect cores
+# ['d4735e3a265e16...', 'b2d2226c48a9bd...', ...]
 ```
 
-### Finding Unique Indices
+| Parameter | Type | Default | Purpose |
+|---|---|---|---|
+| `rows` | `List[str]` | required | string-encoded rows to hash |
+| `num_threads` | `int` | `0` | worker thread count, `0` = auto |
+
+Output order matches input order. Each hash is the lowercase hex SHA256
+digest of the row's UTF-8 bytes - byte-identical to Python's
+`hashlib.sha256(row.encode()).hexdigest()`.
+
+## `deduplicate_indices`
 
 ```python
 from fast_axolotl import deduplicate_indices
 
-rows = [
-    b"row1",
-    b"row2",
-    b"row1",  # duplicate of index 0
-    b"row3",
-    b"row2",  # duplicate of index 1
-]
-
-# Get indices of unique rows
-unique_idx = deduplicate_indices(rows)
-
-print(unique_idx)
-# [0, 1, 3] - first occurrence of each unique row
+rows = ["a", "b", "a", "c"]
+unique_indices, all_hashes = deduplicate_indices(rows)
+# unique_indices == [0, 1, 3]
+# all_hashes is the per-row SHA256 list, same order as `rows`
 ```
 
-## Working with Datasets
+### Filtering against previously seen data
 
-### Deduplicating a HuggingFace Dataset
+Pass the hashes you've already seen as `existing_hashes` to skip rows that
+match anything in your prior set:
 
 ```python
-from datasets import load_dataset
-from fast_axolotl import deduplicate_indices
-
-# Load dataset
-dataset = load_dataset("your_dataset")
-
-# Convert rows to bytes for hashing
-rows = [str(row).encode() for row in dataset["train"]]
-
-# Find unique indices
-unique_idx = deduplicate_indices(rows)
-
-# Filter dataset
-deduped_dataset = dataset["train"].select(unique_idx)
-
-print(f"Original: {len(dataset['train'])}, Deduped: {len(deduped_dataset)}")
+existing = load_previous_hashes()
+unique_idx, new_hashes = deduplicate_indices(
+    rows,
+    existing_hashes=existing,
+    num_threads=8,
+)
 ```
 
-### Deduplicating by Specific Columns
+| Parameter | Type | Default | Purpose |
+|---|---|---|---|
+| `rows` | `List[str]` | required | rows to dedupe |
+| `existing_hashes` | `Optional[List[str]]` | `None` | hashes to filter against |
+| `num_threads` | `int` | `0` | `0` = auto-detect cores |
+
+## Encoding rows correctly
+
+The hash treats your row as a string, so the encoding decides equality.
+Pick a stable, canonical form:
 
 ```python
-from fast_axolotl import deduplicate_indices
 import json
 
-def deduplicate_by_columns(dataset, columns):
-    """Deduplicate based on specific columns only."""
-
-    # Create hash keys from selected columns
-    rows = []
-    for item in dataset:
-        key = json.dumps({col: item[col] for col in columns}).encode()
-        rows.append(key)
-
-    unique_idx = deduplicate_indices(rows)
-    return dataset.select(unique_idx)
-
-# Deduplicate by 'text' column only
-deduped = deduplicate_by_columns(dataset, ["text"])
+row_strings = [
+    json.dumps(row, sort_keys=True, separators=(",", ":"))
+    for row in dataset
+]
+unique_idx, _ = deduplicate_indices(row_strings)
 ```
 
-### Streaming Deduplication
+`sort_keys=True` is the part that matters - without it two semantically
+identical dicts can hash differently because of insertion order.
 
-For very large datasets that don't fit in memory:
+## Axolotl integration
 
-```python
-from fast_axolotl import streaming_dataset_reader, parallel_hash_rows
+When the shim is installed (`import fast_axolotl` runs first), the
+following names are installed on `axolotl.utils.data` as drop-in
+replacements:
 
-def streaming_deduplicate(data_path, output_path):
-    seen_hashes = set()
-    unique_rows = []
+| Shimmed attribute | Backed by |
+|---|---|
+| `axolotl.utils.data.fast_parallel_hash_rows` | `parallel_hash_rows` |
+| `axolotl.utils.data.fast_deduplicate_indices` | `deduplicate_indices` |
 
-    for batch in streaming_dataset_reader(data_path, batch_size=10000):
-        # Convert batch to bytes
-        rows = [str(row).encode() for row in batch["text"]]
+Enable Axolotl's dedupe in your YAML config and it will use the Rust path
+automatically:
 
-        # Hash the batch
-        hashes = parallel_hash_rows(rows)
-
-        # Keep only new unique rows
-        for i, h in enumerate(hashes):
-            if h not in seen_hashes:
-                seen_hashes.add(h)
-                unique_rows.append(batch[i])
-
-    return unique_rows
+```yaml
+dedupe: true
 ```
 
-## Advanced Usage
+## See also
 
-### Custom Hash Function
-
-While fast-axolotl uses SHA256 by default, you can preprocess data for different deduplication strategies:
-
-```python
-from fast_axolotl import deduplicate_indices
-
-def normalize_and_dedupe(texts):
-    """Deduplicate with normalization."""
-
-    # Normalize: lowercase, strip whitespace
-    normalized = [
-        text.lower().strip().encode()
-        for text in texts
-    ]
-
-    return deduplicate_indices(normalized)
-```
-
-### Fuzzy Deduplication Preparation
-
-For near-duplicate detection, use hashing as a first pass:
-
-```python
-from fast_axolotl import parallel_hash_rows
-
-def find_candidate_duplicates(texts, n_shingles=3):
-    """Find candidate near-duplicates using shingling."""
-
-    all_shingles = []
-    for text in texts:
-        # Create character n-grams
-        words = text.split()
-        shingles = [
-            " ".join(words[i:i+n_shingles]).encode()
-            for i in range(len(words) - n_shingles + 1)
-        ]
-        all_shingles.append(shingles)
-
-    # Hash all shingles in parallel
-    flat_shingles = [s for shingles in all_shingles for s in shingles]
-    hashes = parallel_hash_rows(flat_shingles)
-
-    # Group by common shingles for further analysis
-    # ...
-```
-
-## Performance Benchmarks
-
-| Dataset Size | Python hashlib | fast-axolotl | Speedup |
-|--------------|---------------|--------------|---------|
-| 10,000 rows | 0.5s | 0.3s | 1.7x |
-| 100,000 rows | 5.2s | 2.7s | 1.9x |
-| 1,000,000 rows | 52s | 27s | 1.9x |
-
-### Thread Scaling
-
-fast-axolotl automatically uses all available CPU cores:
-
-| Cores | Speedup vs Single Thread |
-|-------|-------------------------|
-| 4 | 3.2x |
-| 8 | 5.8x |
-| 16 | 9.1x |
-| 32 | 14.2x |
-
-## Integration with Axolotl
-
-When shimming is enabled, Axolotl's deduplication automatically uses fast-axolotl:
-
-```python
-import fast_axolotl
-fast_axolotl.install()
-
-# Axolotl's dedupe now uses Rust-accelerated hashing
-from axolotl.utils.data import deduplicate_dataset
-```
-
-## Memory Considerations
-
-### Hashes
-
-Each SHA256 hash is 64 characters (hex string). For 1M rows:
-- Memory for hashes: ~64MB
-
-### Indices
-
-The `deduplicate_indices` function returns a list of integers:
-- Memory for indices: ~8 bytes per unique row
-
-### Tips for Large Datasets
-
-```python
-# Process in chunks to limit memory
-def chunked_dedupe(rows, chunk_size=100000):
-    all_unique = []
-    seen_hashes = set()
-
-    for i in range(0, len(rows), chunk_size):
-        chunk = rows[i:i+chunk_size]
-        hashes = parallel_hash_rows(chunk)
-
-        for j, h in enumerate(hashes):
-            if h not in seen_hashes:
-                seen_hashes.add(h)
-                all_unique.append(i + j)
-
-    return all_unique
-```
-
-## Error Handling
-
-```python
-from fast_axolotl import parallel_hash_rows, deduplicate_indices
-
-# Empty input handling
-hashes = parallel_hash_rows([])  # Returns []
-indices = deduplicate_indices([])  # Returns []
-
-# Invalid input
-try:
-    hashes = parallel_hash_rows(["string", "not", "bytes"])
-except TypeError as e:
-    print(f"Error: {e}")  # Rows must be bytes
-```
-
-## Next Steps
-
-- [Streaming Data](streaming.md) - Combine with streaming for large datasets
-- [API Reference](../api-reference/data-processing.md) - Complete API docs
-- [Benchmarks](../performance/benchmarks.md) - Detailed performance data
+- [Auto-Shimming](shimming.md)
+- [Data Processing API](../api-reference/data-processing.md)
+- [Benchmarks](../performance/benchmarks.md)
