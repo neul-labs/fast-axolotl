@@ -1,6 +1,6 @@
 site_name: fast-axolotl
 site_description: High-performance Rust extensions for Axolotl - drop-in acceleration for LLM training
-site_url: https://fast-axolotl.docs.neullabs.com/
+site_url: https://docs.neullabs.com/fast-axolotl/
 repo_url: https://github.com/neul-labs/fast-axolotl
 repo_name: neul-labs/fast-axolotl
 edit_uri: edit/main/documentation/docs/
