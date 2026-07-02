@@ -1,14 +1,14 @@
 [package]
 name = "fast-axolotl"
 version = "0.2.0"
-authors = ["Dipankar Sarkar <me@dipankar.name>", "Neul Labs"]
+authors = ["Neul Labs <contact@neullabs.com>"]
 edition = "2021"
 license = "MIT"
-homepage = "https://github.com/neul-labs/fast-axolotl"
-documentation = "https://github.com/neul-labs/fast-axolotl#readme"
+homepage = "https://fast-axolotl.neullabs.com"
+documentation = "https://docs.neullabs.com/fast-axolotl"
 readme = "README.md"
 repository = "https://github.com/neul-labs/fast-axolotl"
-description = "High-performance Rust extensions for Axolotl dataset streaming"
+description = "Rust extensions for Axolotl fine-tuning — no OOM on large datasets."
 keywords = ["axolotl", "streaming", "datasets", "rust", "pyo3"]
 
 [lib]

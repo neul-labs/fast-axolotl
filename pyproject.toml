@@ -6,12 +6,12 @@ build-backend = "maturin"
 name = "fast-axolotl"
 dynamic = ["version"]
 authors = [
-    { name = "Dipankar Sarkar", email = "me@dipankar.name" },
+    { name = "Neul Labs", email = "contact@neullabs.com" },
 ]
 maintainers = [
-    { name = "Neul Labs" },
+    { name = "Neul Labs", email = "contact@neullabs.com" },
 ]
-description = "High-performance Rust extensions for Axolotl - drop-in acceleration for existing installations"
+description = "Rust extensions for Axolotl fine-tuning — no OOM on large datasets."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -41,9 +41,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/neul-labs/fast-axolotl"
+Homepage = "https://fast-axolotl.neullabs.com"
 Repository = "https://github.com/neul-labs/fast-axolotl.git"
-Documentation = "https://github.com/neul-labs/fast-axolotl#readme"
+Documentation = "https://docs.neullabs.com/fast-axolotl"
 Issues = "https://github.com/neul-labs/fast-axolotl/issues"
 
 [tool.maturin]

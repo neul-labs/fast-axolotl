@@ -6,7 +6,9 @@
 [![Python](https://img.shields.io/pypi/pyversions/fast-axolotl.svg)](https://pypi.org/project/fast-axolotl/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-High-performance Rust extensions for [Axolotl](https://github.com/axolotl-ai-cloud/axolotl) - drop-in acceleration for existing installations.
+**Rust extensions for [Axolotl](https://github.com/axolotl-ai-cloud/axolotl) fine-tuning — no OOM on large datasets.** Drop-in acceleration for existing installations, with zero config.
+
+**Links:** [Website](https://fast-axolotl.neullabs.com) · [Docs](https://docs.neullabs.com/fast-axolotl) · [GitHub](https://github.com/neul-labs/fast-axolotl)
 
 ## Highlights
 
@@ -26,6 +28,8 @@ or
 ```bash
 pip install fast-axolotl
 ```
+
+`fast-axolotl` is also published to [crates.io](https://crates.io/crates/fast-axolotl) as the PyO3 extension module that powers the Python wheel. The Python package above is the intended interface for most users; to build against the Rust crate directly, run `cargo add fast-axolotl`.
 
 ```python
 import fast_axolotl  # Auto-installs acceleration shim
@@ -202,7 +206,18 @@ Questions or bugs? Reach out via:
 
 ## Maintainers
 
-Fast-Axolotl is authored by Dipankar Sarkar (<me@dipankar.name>) and maintained by the team at Neul Labs.
+Fast-Axolotl is built and maintained by [Neul Labs](https://www.neullabs.com) (<contact@neullabs.com>).
+
+## Part of the Neul Labs toolchain
+
+Fast-Axolotl is part of the Neul Labs accelerators family. Explore the rest of the toolchain from [Neul Labs](https://www.neullabs.com):
+
+| Project | What it does |
+|---------|--------------|
+| [fast-litellm](https://fast-litellm.neullabs.com) | Drop-in Rust acceleration for LiteLLM. |
+| [fast-langgraph](https://fast-langgraph.neullabs.com) | Rust accelerators for LangGraph — up to 700x faster checkpoints. |
+| [fast-crewai](https://fast-crewai.neullabs.com) | Drop-in Rust acceleration for CrewAI. |
+| [fastagentic](https://fastagentic.neullabs.com) | Build agents with any framework; ship them with FastAgentic. |
 
 ## License
 
